@@ -12,3 +12,7 @@
 - Имеются гибкие настройки, поддержка двух языков и тд. 
 
 **Подробнее [тут](https://github.com/mr-Vestr/plugins/blob/main/TEMPLATES.md).**
+
+---
+
+Следите за моими плагинами в [Telegram](https://t.me/I_am_Vestr) | [ExteraStore](https://exterastore.app/developers/2037728749)
