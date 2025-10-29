@@ -11,7 +11,7 @@
 - Есть экспорт / импорт шаблонов
 - Имеются гибкие настройки, поддержка двух языков и тд. 
 
-**Подробнее [тут](https://github.com/mr-Vestr/plugins/blob/main/TEMPLATES.md).**
+**Подробнее про [Templaes](https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES.md).**
 
 ---
 
