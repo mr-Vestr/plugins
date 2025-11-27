@@ -49,4 +49,4 @@
 - Другие типы и примеры форматирования есть в настройках плагина при нажатии на кнопку "Как это работает?"
 
 
-**[Скачать плагин](https://github.com/mr-Vestr/plugins/releases/tag/Templates_2.1)**
+**[Скачать плагин](https://github.com/mr-Vestr/plugins/releases/tag/Templates_3.0)**
