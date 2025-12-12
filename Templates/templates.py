@@ -76,7 +76,7 @@ __description__ = """A plugin for creating, editing, and quickly sending message
 
 Плагин для создания, редактирования и быстрой отправки шаблонов сообщений."""
 __author__ = "@mr_Vestr"
-__version__ = "3.1"
+__version__ = "3.2"
 __min_version__ = "12.1.1"
 __icon__ = "mr_vestr/7"
 
@@ -136,7 +136,7 @@ LANG = {
         'channel_1': 'Мой канал — @I_am_Vestr',
         'personal_1': 'Моя личка — @mr_Vestr',
         'other': 'Другое',
-        'plugin_version': 'Версия плагина — 3.1',
+        'plugin_version': 'Версия плагина — 3.2',
         'updates': 'Обновления',
         'current_version': 'Текущая версия: {version}',
         'updates_info': 'Новые версии будут в моём телеграм канале.',
@@ -166,11 +166,12 @@ LANG = {
         'export_error': 'Ошибка экспорта: {error}',
         'export_success': 'Успешный экспорт.',
         'import_question': 'Импортировать шаблоны из файла?',
-        'import_success': 'Импорт завершён.',
+        'import_success': 'Шаблоны импортированы.',
         'import_error': 'Ошибка импорта: {error}',
         'selected_templates': 'Выбрано',
         'select_templates': 'Выбор шаблонов',
         'select': 'Выбрать',
+        'export': 'Экспортировать',
         'import': 'Импортировать',
         'apply': 'Применить',
         'template_deleted': 'Шаблон удалён.',
@@ -194,6 +195,8 @@ LANG = {
         'link_copied': 'Ссылка скопирована',
         'copied_to_clipboard': 'Скопировано в буфер обмена',
         'error_prefix': 'Ошибка:',
+        'clear_all_templates': 'Очистить все шаблоны',
+        'templates_limit_exceeded': 'Количество шаблонов не может превышать 30 шт.',
     },
     'en': {
         'name': 'Template name',
@@ -247,7 +250,7 @@ If you want to suggest an idea, report a bug, or anything else, write to the @I_
         'channel_1': 'My channel — @I_am_Vestr',
         'personal_1': 'My DM — @mr_Vestr',
         'other': 'Other',
-        'plugin_version': 'Plugin version — 3.1',
+        'plugin_version': 'Plugin version — 3.2',
         'updates': 'Updates',
         'current_version': 'Current version: {version}',
         'updates_info': 'New versions are available in my Telegram channel.',
@@ -277,11 +280,12 @@ If you want to suggest an idea, report a bug, or anything else, write to the @I_
         'export_error': 'Export error: {error}',
         'export_success': 'Export successful.',
         'import_question': 'Import templates from file?',
-        'import_success': 'Import completed.',
+        'import_success': 'Templates imported.',
         'import_error': 'Import error: {error}',
         'selected_templates': 'Selected',
         'select_templates': 'Select Templates',
         'select': 'Select',
+        'export': 'Export',
         'import': 'Import',
         'apply': 'Apply',
         'template_deleted': 'Template deleted.',
@@ -305,6 +309,8 @@ If you want to suggest an idea, report a bug, or anything else, write to the @I_
         'link_copied': 'Link copied',
         'copied_to_clipboard': 'Copied to clipboard',
         'error_prefix': 'Error:',
+        'clear_all_templates': 'Clear all templates',
+        'templates_limit_exceeded': 'The number of templates cannot exceed 30.',
     }
 }
 
@@ -395,6 +401,7 @@ class TemplatesPlugin(BasePlugin):
         self._add_input_hook()
         self._add_document_hook()
         self._hook_chat_activity_resume()
+        self._force_load_stickers()
 
     def set_setting(self, key, value, reload_settings=False):
         try:
@@ -435,7 +442,8 @@ class TemplatesPlugin(BasePlugin):
         try:
             from client_utils import get_last_fragment
             from org.telegram.messenger import MediaDataController
-            import time
+            from org.telegram.tgnet import TLRPC
+            
             def load_stickers():
                 try:
                     fragment = get_last_fragment()
@@ -443,9 +451,12 @@ class TemplatesPlugin(BasePlugin):
                         current_account = fragment.getCurrentAccount()
                         media_controller = MediaDataController.getInstance(current_account)
                         if media_controller:
-                            media_controller.loadStickerSetByName("mr_vestr", 0, True)
+                            input_set = TLRPC.TL_inputStickerSetShortName()
+                            input_set.short_name = "mr_vestr"
+                            media_controller.getStickerSet(input_set, None, False, None)
                 except Exception:
                     pass
+            
             from android_utils import run_on_ui_thread
             from org.telegram.messenger import AndroidUtilities
             AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(load_stickers), 1000)
@@ -461,7 +472,7 @@ class TemplatesPlugin(BasePlugin):
                 text=t('templates', lang=self.lang),
                 icon='msg_info',
                 item_id='templates_drawer',
-                on_click=lambda ctx: self.open_plugin_settings()
+                on_click=lambda ctx: (self.open_plugin_settings(), self._force_load_stickers())
             ))
 
     def _update_chat_menu(self):
@@ -704,8 +715,13 @@ class TemplatesPlugin(BasePlugin):
             from android.content import ClipboardManager, ClipData
             clipboard = context.getSystemService(context.CLIPBOARD_SERVICE)
             clipboard.setPrimaryClip(ClipData.newPlainText("link", url))
-            from android.widget import Toast
-            Toast.makeText(context, t('link_copied', lang=self.lang), Toast.LENGTH_SHORT).show()
+            from ui.bulletin import BulletinHelper
+            try:
+                from org.telegram.messenger import R as R_tg
+                icon_attr = getattr(R_tg.raw, 'copy', None)
+            except Exception:
+                icon_attr = None
+            BulletinHelper.show_with_button(t('link_copied', lang=self.lang), icon_attr if icon_attr else 0, t('close', lang=self.lang), lambda: None, None)
         except Exception:
             pass
 
@@ -980,7 +996,7 @@ class TemplatesPlugin(BasePlugin):
                 self._open_personal_link(None)
             except Exception:
                 pass
-        
+
         channel_btn = create_link_button(t('channel', lang=self.lang), 'msg_channel', on_channel)
         personal_btn = create_link_button(t('personal', lang=self.lang), 'msg_contacts', on_personal)
         channel_btn.setMinimumWidth(AndroidUtilities.dp(100))
@@ -994,7 +1010,6 @@ class TemplatesPlugin(BasePlugin):
             Theme.getColor(Theme.key_featuredStickers_addButton),
             Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
         ))
-        
         close_btn_frame.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
         close_btn_frame.setClickable(True)
         close_btn_frame.setFocusable(True)
@@ -1012,6 +1027,7 @@ class TemplatesPlugin(BasePlugin):
         sheet.show()
 
     def _show_version_dialog(self, _):
+        self._force_load_stickers()
         from org.telegram.ui.ActionBar import BottomSheet, Theme
         from android.widget import LinearLayout, TextView, ScrollView, FrameLayout
         from android.view import Gravity, View
@@ -1020,7 +1036,7 @@ class TemplatesPlugin(BasePlugin):
         from org.telegram.messenger import AndroidUtilities, MediaDataController, ImageLocation
         from android.graphics.drawable import GradientDrawable
         from android.graphics import Color
-        from android_utils import OnClickListener
+        from android_utils import OnClickListener, run_on_ui_thread
         from client_utils import get_last_fragment
         from org.telegram.messenger.browser import Browser
         from android.net import Uri
@@ -1039,6 +1055,7 @@ class TemplatesPlugin(BasePlugin):
         try:
             avatar_view = BackupImageView(act)
             avatar_view.setRoundRadius(AndroidUtilities.dp(45))
+            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
             try:
                 current_account = frag.getCurrentAccount()
             except Exception:
@@ -1046,11 +1063,29 @@ class TemplatesPlugin(BasePlugin):
             media_controller = MediaDataController.getInstance(current_account)
             if media_controller:
                 sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 1:
+                if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 1:
+                    from org.telegram.tgnet import TLRPC
+                    input_set = TLRPC.TL_inputStickerSetShortName()
+                    input_set.short_name = "mr_vestr"
+                    media_controller.getStickerSet(input_set, None, False, None)
+                    def retry_load_sticker(attempt=0):
+                        try:
+                            if attempt < 5:
+                                sticker_set = media_controller.getStickerSetByName("mr_vestr")
+                                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 1:
+                                    sticker_document = sticker_set.documents.get(1)
+                                    image_location = ImageLocation.getForDocument(sticker_document)
+                                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                                else:
+                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                        except Exception:
+                            if attempt < 5:
+                                AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
+                elif sticker_set.documents.size() > 1:
                     sticker_document = sticker_set.documents.get(1)
                     image_location = ImageLocation.getForDocument(sticker_document)
                     avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
         except Exception:
             pass
         title_view = TextView(act)
@@ -1098,7 +1133,6 @@ class TemplatesPlugin(BasePlugin):
             Theme.getColor(Theme.key_featuredStickers_addButton),
             Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
         ))
-        
         check_btn_frame.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
         check_btn_frame.setClickable(True)
         check_btn_frame.setFocusable(True)
@@ -1146,27 +1180,31 @@ class TemplatesPlugin(BasePlugin):
             text=t('chat_menu', lang=self.lang),
             default=self.get_setting('show_chat_menu', True),
             subtext=t('chat_menu_sub', lang=self.lang),
-            on_change=self._on_chat_switch
+            on_change=self._on_chat_switch,
+            link_alias='show_chat_menu'
         ))
         settings.append(Switch(
             key='show_drawer_menu',
             text=t('drawer_menu', lang=self.lang),
             default=self.get_setting('show_drawer_menu', False),
             subtext=t('drawer_menu_sub', lang=self.lang),
-            on_change=self._on_drawer_switch
+            on_change=self._on_drawer_switch,
+            link_alias='show_drawer_menu'
         ))
         settings.append(Switch(
             key='show_chat_plugins_menu',
             text=t('chat_plugins_menu', lang=self.lang),
             default=self.get_setting('show_chat_plugins_menu', False),
             subtext=t('chat_plugins_menu_sub', lang=self.lang),
-            on_change=self._on_chat_plugins_switch
+            on_change=self._on_chat_plugins_switch,
+            link_alias='show_chat_plugins_menu'
         ))
         settings.append(Input(
             key='send_cmd',
             text=t('send_cmd', lang=self.lang),
             default=self.get_setting('send_cmd', '//'),
-            subtext=t('send_cmd_sub', lang=self.lang)
+            subtext=t('send_cmd_sub', lang=self.lang),
+            link_alias='send_cmd'
         ))
         settings.append(Divider())
         settings.append(Header(text=t('templates_title', lang=self.lang)))
@@ -1183,7 +1221,6 @@ class TemplatesPlugin(BasePlugin):
             on_click=lambda ctx: self._show_export_bottom_sheet()
         ))
         settings.append(Divider())
-
         created_count = self._get_created_count()
         for i in range(created_count):
             tpl = self.templates[i] if i < len(self.templates) else {}
@@ -1227,7 +1264,8 @@ class TemplatesPlugin(BasePlugin):
             text=t('support_me', lang=self.lang),
             icon='menu_feature_reactions',
             accent=True,
-            on_click=self._show_support_me_menu
+            on_click=self._show_support_me_menu,
+            link_alias='support_me'
         ))
         settings.append(Text(
             text=t('channel_1', lang=self.lang),
@@ -1247,14 +1285,17 @@ class TemplatesPlugin(BasePlugin):
         settings.append(Text(
             text=t('how_it_works', lang=self.lang),
             icon='msg_info',
-            on_click=self._show_how_it_works
+            on_click=self._show_how_it_works,
+            link_alias='how_it_works'
         ))
         settings.append(Text(
             text=t('plugin_version', lang=self.lang),
             icon='msg_settings_14',
             accent=True,
-            on_click=self._show_version_dialog
+            on_click=self._show_version_dialog,
+            link_alias='plugin_version'
         ))
+        settings.append(Divider())
         settings.append(Divider())
         return settings
 
@@ -1312,12 +1353,51 @@ class TemplatesPlugin(BasePlugin):
             popup_layout.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground))
             popup_layout.setFitItems(True)
             
-            def create_menu_item(icon_res: int, title: str, on_click_action):
+            def create_menu_item(icon_res: int, title: str, on_click_action, is_clear=False):
+                from android.graphics.drawable import GradientDrawable
+                from android.graphics import Color, PorterDuff
+                from android.content.res import ColorStateList
+                from android.graphics.drawable import RippleDrawable
                 item_frame = FrameLayout(context)
-                item_frame.setMinimumWidth(AndroidUtilities.dp(200))
+                item_frame.setMinimumWidth(AndroidUtilities.dp(160))
                 item_frame.setClickable(True)
                 item_frame.setFocusable(True)
-                item_frame.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), 2))
+                try:
+                    try:
+                        try:
+                            bg_color = Theme.getColor(Theme.key_dialogBackgroundGray) & 0x20FFFFFF | 0x10000000
+                        except Exception:
+                            try:
+                                bg_color = Theme.getColor(Theme.key_windowBackgroundGray) & 0x20FFFFFF | 0x10000000
+                            except Exception:
+                                bg_color = Color.parseColor("#F0F0F0")
+                    except Exception:
+                        bg_color = Color.parseColor("#F0F0F0")
+                    try:
+                        pressed_color = Theme.getColor(Theme.key_listSelector) & 0x40FFFFFF | 0x30000000
+                    except Exception:
+                        pressed_color = Color.parseColor("#D0D0D0")
+                    btn_bg = GradientDrawable()
+                    btn_bg.setCornerRadius(AndroidUtilities.dp(10))
+                    btn_bg.setColor(bg_color)
+                    try:
+                        ripple_color = ColorStateList.valueOf(Color.parseColor("#40000000"))
+                        pressed_bg = GradientDrawable()
+                        pressed_bg.setCornerRadius(AndroidUtilities.dp(10))
+                        pressed_bg.setColor(pressed_color)
+                        ripple_drawable = RippleDrawable(ripple_color, btn_bg, pressed_bg)
+                        item_frame.setBackground(ripple_drawable)
+                    except Exception:
+                        try:
+                            item_frame.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                                AndroidUtilities.dp(10),
+                                bg_color,
+                                pressed_color
+                            ))
+                        except Exception:
+                            item_frame.setBackground(btn_bg)
+                except Exception:
+                    item_frame.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), 2))
                 item_content = LinearLayout(context)
                 item_content.setOrientation(LinearLayout.HORIZONTAL)
                 item_content.setGravity(Gravity.CENTER_VERTICAL)
@@ -1325,18 +1405,35 @@ class TemplatesPlugin(BasePlugin):
                 icon = ImageView(context)
                 icon.setScaleType(ImageView.ScaleType.CENTER)
                 try:
-                    from android.graphics import PorterDuff
                     icon_drawable = ContextCompat.getDrawable(context, icon_res)
-                    icon_drawable.setColorFilter(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem), PorterDuff.Mode.SRC_IN)
+                    if is_clear:
+                        try:
+                            red_color = Theme.getColor(Theme.key_text_RedRegular)
+                        except Exception:
+                            red_color = Color.parseColor("#FF3B30")
+                        icon_drawable.setColorFilter(red_color, PorterDuff.Mode.SRC_IN)
+                    else:
+                        try:
+                            gray_color = Theme.getColor(Theme.key_dialogTextGray)
+                        except Exception:
+                            gray_color = Color.parseColor("#808080")
+                        icon_drawable.setColorFilter(gray_color, PorterDuff.Mode.SRC_IN)
                     icon.setImageDrawable(icon_drawable)
                 except Exception:
                     icon.setImageResource(icon_res)
                 item_content.addView(icon, LayoutHelper.createLinear(24, 24, Gravity.CENTER_VERTICAL, 0, 0, 12, 0))
                 title_tv = TextView(context)
                 title_tv.setText(title)
-                title_tv.setTextSize(16)
+                title_tv.setTextSize(14)
                 try:
-                    title_tv.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem))
+                    if is_clear:
+                        try:
+                            red_color = Theme.getColor(Theme.key_text_RedRegular)
+                        except Exception:
+                            red_color = Color.parseColor("#FF3B30")
+                        title_tv.setTextColor(red_color)
+                    else:
+                        title_tv.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem))
                 except Exception:
                     pass
                 item_content.addView(title_tv, LayoutHelper.createLinear(-1, -2, 1.0, Gravity.CENTER_VERTICAL))
@@ -1351,8 +1448,13 @@ class TemplatesPlugin(BasePlugin):
                     field_content = tpl.get(field, '')
                     clipboard.setPrimaryClip(ClipData.newPlainText("template", field_content))
                     
-                    from android.widget import Toast
-                    Toast.makeText(context, t('copied_to_clipboard', lang=self.lang), Toast.LENGTH_SHORT).show()
+                    from ui.bulletin import BulletinHelper
+                    try:
+                        from org.telegram.messenger import R as R_tg
+                        icon_attr = getattr(R_tg.raw, 'copy', None)
+                    except Exception:
+                        icon_attr = None
+                    BulletinHelper.show_with_button(t('copied_to_clipboard', lang=self.lang), icon_attr if icon_attr else 0, t('close', lang=self.lang), lambda: None, None)
                 except Exception:
                     pass
             
@@ -1402,12 +1504,12 @@ class TemplatesPlugin(BasePlugin):
                 except Exception:
                     pass
             menu_items = [
-                (R.drawable.msg_copy, t('copy', lang=self.lang), do_copy),
-                (R.drawable.msg_delete, t('clear', lang=self.lang), do_clear),
+                (R.drawable.msg_copy, t('copy', lang=self.lang), do_copy, False),
+                (R.drawable.msg_delete, t('clear', lang=self.lang), do_clear, True),
             ]
             popup_window_ref = [None]
-            for icon_res, title, action in menu_items:
-                item_view, on_click_action = create_menu_item(icon_res, title, action)
+            for icon_res, title, action, is_clear in menu_items:
+                item_view, on_click_action = create_menu_item(icon_res, title, action, is_clear)
                 item_view.setOnClickListener(OnClickListener(lambda *_args, act=on_click_action, pw_ref=popup_window_ref: (
                     pw_ref[0].dismiss() if pw_ref[0] else None,
                     act()
@@ -1430,22 +1532,33 @@ class TemplatesPlugin(BasePlugin):
             if anchor_view:
                 location = [0, 0]
                 anchor_view.getLocationInWindow(location)
-                popup_x = location[0] + anchor_view.getWidth() - popup_layout.getMeasuredWidth()
-                popup_y = location[1] + anchor_view.getHeight()
                 fragment_view = fragment.getFragmentView()
+                root_view = anchor_view.getRootView()
                 if fragment_view:
                     popup_width = popup_layout.getMeasuredWidth()
                     popup_height = popup_layout.getMeasuredHeight()
                     fragment_width = fragment_view.getWidth()
                     fragment_height = fragment_view.getHeight()
+                    if AndroidUtilities.isTablet():
+                        popup_x = location[0] + anchor_view.getWidth() + AndroidUtilities.dp(8)
+                        if popup_x + popup_width > location[0] + fragment_width:
+                            popup_x = location[0] - popup_width - AndroidUtilities.dp(8)
+                    else:
+                        popup_x = location[0] + anchor_view.getWidth() - popup_width
+                    popup_y = location[1] + anchor_view.getHeight()
+                    window_width = root_view.getWidth()
+                    window_height = root_view.getHeight()
                     if popup_x < 0:
-                        popup_x = 0
-                    elif popup_x + popup_width > fragment_width:
-                        popup_x = fragment_width - popup_width
-                    if popup_y + popup_height > fragment_height:
+                        popup_x = AndroidUtilities.dp(8)
+                    elif popup_x + popup_width > window_width:
+                        popup_x = window_width - popup_width - AndroidUtilities.dp(8)
+                    if popup_y + popup_height > window_height:
                         popup_y = location[1] - popup_height
+                else:
+                    popup_x = location[0] + anchor_view.getWidth() - popup_layout.getMeasuredWidth()
+                    popup_y = location[1] + anchor_view.getHeight()
                 popup_window.showAtLocation(
-                    fragment_view,
+                    root_view,
                     Gravity.TOP | Gravity.LEFT,
                     popup_x,
                     popup_y
@@ -1658,7 +1771,6 @@ class TemplatesPlugin(BasePlugin):
                         else:
                             if isinstance(did, str) and did:
                                 username = did
-
                         if username:
                             Browser.openUrl(
                                 fragment.getParentActivity(),
@@ -1682,7 +1794,6 @@ class TemplatesPlugin(BasePlugin):
                                 )
                     except Exception:
                         pass
-
             run_on_ui_thread(_open)
         except Exception:
             pass
@@ -1811,6 +1922,7 @@ class TemplatesPlugin(BasePlugin):
             last_fragment.presentFragment(activity)
 
     def _show_support_me_menu(self, _):
+        self._force_load_stickers()
         from org.telegram.ui.ActionBar import BottomSheet, Theme
         from android.widget import LinearLayout, TextView, ScrollView, FrameLayout, ImageView
         from android.view import Gravity, View
@@ -1821,8 +1933,6 @@ class TemplatesPlugin(BasePlugin):
         from android.graphics import Color
         from android_utils import OnClickListener
         from client_utils import get_last_fragment
-        from org.telegram.messenger.browser import Browser
-        from android.net import Uri
         frag = get_last_fragment()
         act = frag.getParentActivity() if frag else None
         if not act:
@@ -1838,6 +1948,7 @@ class TemplatesPlugin(BasePlugin):
         try:
             avatar_view = BackupImageView(act)
             avatar_view.setRoundRadius(AndroidUtilities.dp(45))
+            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
             try:
                 current_account = frag.getCurrentAccount()
             except Exception:
@@ -1845,11 +1956,30 @@ class TemplatesPlugin(BasePlugin):
             media_controller = MediaDataController.getInstance(current_account)
             if media_controller:
                 sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 9:
+                if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 9:
+                    from org.telegram.tgnet import TLRPC
+                    input_set = TLRPC.TL_inputStickerSetShortName()
+                    input_set.short_name = "mr_vestr"
+                    media_controller.getStickerSet(input_set, None, False, None)
+                    from org.telegram.messenger import AndroidUtilities
+                    def retry_load_sticker(attempt=0):
+                        try:
+                            if attempt < 5:
+                                sticker_set = media_controller.getStickerSetByName("mr_vestr")
+                                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 9:
+                                    sticker_document = sticker_set.documents.get(9)
+                                    image_location = ImageLocation.getForDocument(sticker_document)
+                                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                                else:
+                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                        except Exception:
+                            if attempt < 5:
+                                AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
+                elif sticker_set.documents.size() > 9:
                     sticker_document = sticker_set.documents.get(9)
                     image_location = ImageLocation.getForDocument(sticker_document)
                     avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
         except Exception:
             pass
         title_view = TextView(act)
@@ -1910,8 +2040,28 @@ class TemplatesPlugin(BasePlugin):
         def on_support(v):
             try:
                 sheet.dismiss()
-                uri = Uri.parse("https://t.me/mr_Vestr")
-                Browser.openUrl(act, uri, True, True, True, None, None, False, False, False)
+                from org.telegram.ui import LaunchActivity
+                from org.telegram.messenger import UserConfig
+                from java.lang import Integer
+                if not hasattr(LaunchActivity, 'instance') or LaunchActivity.instance is None:
+                    return
+                launch_activity = LaunchActivity.instance
+                getSafeLastFragment_method = launch_activity.getClass().getDeclaredMethod("getSafeLastFragment")
+                getSafeLastFragment_method.setAccessible(True)
+                last_fragment = getSafeLastFragment_method.invoke(launch_activity)
+                if last_fragment is None or last_fragment.getContext() is None:
+                    return
+                target_user_id = 2037728749
+                current_account = UserConfig.selectedAccount
+                from org.telegram.ui.Gifts import GiftSheet
+                gift_sheet = GiftSheet(
+                    last_fragment.getContext(),
+                    current_account,
+                    target_user_id,
+                    None,
+                    None
+                )
+                gift_sheet.show()
             except Exception:
                 pass
         support_btn_frame.setOnClickListener(OnClickListener(lambda *_: on_support(support_btn_frame)))
@@ -2075,6 +2225,7 @@ class TemplatesPlugin(BasePlugin):
         return sheet
 
     def _show_export_bottom_sheet(self):
+        self._force_load_stickers()
         try:
             from client_utils import get_last_fragment
             from org.telegram.ui.ActionBar import BottomSheet, Theme
@@ -2125,6 +2276,7 @@ class TemplatesPlugin(BasePlugin):
                 from org.telegram.messenger import MediaDataController, ImageLocation
                 avatar_view = BackupImageView(act)
                 avatar_view.setRoundRadius(AndroidUtilities.dp(45))
+                root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
                 try:
                     current_account = fragment.getCurrentAccount()
                 except Exception:
@@ -2132,11 +2284,29 @@ class TemplatesPlugin(BasePlugin):
                 media_controller = MediaDataController.getInstance(current_account)
                 if media_controller:
                     sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > 11:
+                    if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 11:
+                        from org.telegram.tgnet import TLRPC
+                        input_set = TLRPC.TL_inputStickerSetShortName()
+                        input_set.short_name = "mr_vestr"
+                        media_controller.getStickerSet(input_set, None, False, None)
+                        def retry_load_sticker(attempt=0):
+                            try:
+                                if attempt < 5:
+                                    sticker_set = media_controller.getStickerSetByName("mr_vestr")
+                                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > 11:
+                                        sticker_document = sticker_set.documents.get(11)
+                                        image_location = ImageLocation.getForDocument(sticker_document)
+                                        avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                                    else:
+                                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                            except Exception:
+                                if attempt < 5:
+                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
+                    elif sticker_set.documents.size() > 11:
                         sticker_document = sticker_set.documents.get(11)
                         image_location = ImageLocation.getForDocument(sticker_document)
                         avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-                root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
             except Exception:
                 pass
             title_view = TextView(act)
@@ -2179,7 +2349,7 @@ class TemplatesPlugin(BasePlugin):
                 divider.setBackgroundColor(Color.GRAY)
             root_layout.addView(divider, LayoutHelper.createLinear(-1, 1, Gravity.FILL_HORIZONTAL, 0, 8, 0, 8))
             export_button = TextView(act)
-            export_button.setText(t('export_templates', lang=self.lang))
+            export_button.setText(t('export', lang=self.lang))
             export_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
             export_button.setTypeface(AndroidUtilities.bold())
             export_button.setGravity(Gravity.CENTER)
@@ -2204,77 +2374,40 @@ class TemplatesPlugin(BasePlugin):
                                 "name": template["name"],
                                 "text": template["text"]
                             })
-                    import json
-                    data_bytes = json.dumps({"templates": export_items}, ensure_ascii=False).encode("utf-8")
-                    from org.telegram.ui import DialogsActivity
-                    from android.os import Bundle
-                    args = Bundle()
-                    args.putBoolean("onlySelect", True)
-                    args.putBoolean("checkCanWrite", True)
-                    args.putInt("dialogsType", 0)
-                    args.putBoolean("allowGlobalSearch", True)
-                    activity = DialogsActivity(args)
-                    def on_response_ready(fragment, dids, message, param, notify, scheduleDate, topicsFragment):
+                    def open_share():
                         try:
-                            activity.finishFragment()
-                            if dids.isEmpty():
-                                return
-                            selected_id = dids.get(0).dialogId
-                            peer_id = int(str(selected_id))
-                            from client_utils import _LocalFileSystem
-                            path = _LocalFileSystem.write_temp_file("export.templates", data_bytes, delete_after=30)
-                            self._send_file(peer_id, path, t('export_file_caption', lang=self.lang))
+                            import json
+                            from file_utils import get_cache_dir
+                            from org.telegram.messenger import ApplicationLoader
+                            from java.io import File, FileOutputStream
+                            from android.content import Intent
+                            from android.net import Uri
+                            from org.telegram.ui import LaunchActivity
+                            data_bytes = json.dumps({"templates": export_items}, ensure_ascii=False).encode("utf-8")
+                            cache_dir = get_cache_dir()
+                            filename = "export.templates"
+                            file_path = os.path.join(cache_dir, filename)
+                            temp_file = File(file_path)
+                            if temp_file.exists():
+                                temp_file.delete()
+                            fos = FileOutputStream(temp_file)
+                            fos.write(data_bytes)
+                            fos.close()
+                            context = ApplicationLoader.applicationContext
+                            file_uri = Uri.fromFile(temp_file)
+                            intent = Intent(context, LaunchActivity)
+                            intent.setAction(Intent.ACTION_SEND)
+                            intent.setType("application/octet-stream")
+                            intent.putExtra(Intent.EXTRA_STREAM, file_uri)
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            context.startActivity(intent)
                             from ui.bulletin import BulletinHelper
-                            try:
-                                from org.telegram.messenger import R as R_tg
-                                icon_attr = getattr(R_tg.raw, 'done', None)
-                            except Exception:
-                                icon_attr = None
-                            run_on_ui_thread(lambda: BulletinHelper.show_with_button(
-                                t('export_success', lang=self.lang),
-                                icon_attr if icon_attr else 0,
-                                t('close', lang=self.lang),
-                                lambda: None,
-                                None
-                            ))
-                        except Exception as callback_error:
+                            run_on_ui_thread(lambda: BulletinHelper.show_success(t('export_success', lang=self.lang)))
+                        except Exception as e:
                             from ui.bulletin import BulletinHelper
-                            run_on_ui_thread(lambda: BulletinHelper.show_error(t('export_error', lang=self.lang, error=str(callback_error))))
-                    DialogsDelegateInterface = find_class("org.telegram.ui.DialogsActivity$DialogsActivityDelegate")
-                    delegate = dynamic_proxy(DialogsDelegateInterface)()
-                    try:
-                        from java.lang.reflect import Method
-                        from org.telegram.messenger import AndroidUtilities
-                        class DialogsHandler:
-                            def __init__(self):
-                                pass
-                            def onDelegateResponseReady(self, fragment, dids, message, param, notify, scheduleDate, topicsFragment):
-                                on_response_ready(fragment, dids, message, param, notify, scheduleDate, topicsFragment)
-                        class SimpleDialogsDelegate:
-                            def __init__(self):
-                                pass
-                            def onDelegateResponseReady(self, fragment, dids, message, param, notify, scheduleDate, topicsFragment):
-                                on_response_ready(fragment, dids, message, param, notify, scheduleDate, topicsFragment)
-                        from android_utils import OnClickListener
-                        class DialogsClickListener(OnClickListener):
-                            def __init__(self):
-                                super().__init__(lambda v: None)
-                            def onDelegateResponseReady(self, fragment, dids, message, param, notify, scheduleDate, topicsFragment):
-                                on_response_ready(fragment, dids, message, param, notify, scheduleDate, topicsFragment)
-                        delegate = DialogsClickListener()
-                    except Exception as delegate_error:
-                        self._export_templates_via_dialogs(selected_indices)
-                        return
-                    activity.setDelegate(delegate)
-                    from org.telegram.messenger import AndroidUtilities
-                    from java.lang import Runnable
-                    class PresentFragmentRunnable(Runnable):
-                        def __init__(self, frag, act):
-                            self.frag = frag
-                            self.act = act
-                        def run(self):
-                            self.frag.presentFragment(self.act)
-                    AndroidUtilities.runOnUIThread(PresentFragmentRunnable(fragment, activity), 200)
+                            run_on_ui_thread(lambda: BulletinHelper.show_error(t('export_error', lang=self.lang, error=str(e))))
+                    run_on_ui_thread(open_share)
                 except Exception as export_error:
                     from ui.bulletin import BulletinHelper
                     error_msg = str(export_error)
@@ -2408,7 +2541,6 @@ class TemplatesPlugin(BasePlugin):
             export_items = []
             if selected_indices is None:
                 selected_indices = list(range(TEMPLATE_COUNT))
-            
             for i in selected_indices:
                 if i >= TEMPLATE_COUNT:
                     continue
@@ -2466,6 +2598,7 @@ class TemplatesPlugin(BasePlugin):
             BulletinHelper.show_error(t('export_error', lang=self.lang, error=str(e)))
 
     def _show_import_bottom_sheet(self, data, act=None):
+        self._force_load_stickers()
         try:
             from org.telegram.ui.ActionBar import BottomSheet, Theme
             from android.widget import LinearLayout, TextView, ScrollView, FrameLayout, ImageView
@@ -2499,6 +2632,7 @@ class TemplatesPlugin(BasePlugin):
             try:
                 avatar_view = BackupImageView(act)
                 avatar_view.setRoundRadius(AndroidUtilities.dp(45))
+                root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
                 try:
                     current_account = frag.getCurrentAccount()
                 except Exception:
@@ -2506,11 +2640,29 @@ class TemplatesPlugin(BasePlugin):
                 media_controller = MediaDataController.getInstance(current_account)
                 if media_controller:
                     sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > 7:
-                        sticker_document = sticker_set.documents.get(7)
+                    if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 10:
+                        from org.telegram.tgnet import TLRPC
+                        input_set = TLRPC.TL_inputStickerSetShortName()
+                        input_set.short_name = "mr_vestr"
+                        media_controller.getStickerSet(input_set, None, False, None)
+                        def retry_load_sticker(attempt=0):
+                            try:
+                                if attempt < 5:
+                                    sticker_set = media_controller.getStickerSetByName("mr_vestr")
+                                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > 10:
+                                        sticker_document = sticker_set.documents.get(10)
+                                        image_location = ImageLocation.getForDocument(sticker_document)
+                                        avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                                    else:
+                                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                            except Exception:
+                                if attempt < 5:
+                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
+                    elif sticker_set.documents.size() > 10:
+                        sticker_document = sticker_set.documents.get(10)
                         image_location = ImageLocation.getForDocument(sticker_document)
                         avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-                root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
             except Exception:
                 pass
             title_view = TextView(act)
@@ -2545,7 +2697,51 @@ class TemplatesPlugin(BasePlugin):
                 self._show_template_selector(templates[:max_templates], selected_indices, lambda indices: 
                     run_on_ui_thread(lambda: selected_text.setText(f"{t('selected_templates', lang=self.lang)} ({len(indices)})")))
             selected_text.setOnClickListener(OnClickListener(show_template_selector))
-            root_layout.addView(selected_text, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 16))
+            root_layout.addView(selected_text, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 12))
+            from org.telegram.ui.Components import CheckBox2
+            clear_checkbox = CheckBox2(act, 21, None)
+            clear_checkbox.setColor(Theme.key_dialogRoundCheckBox, Theme.key_checkboxDisabled, Theme.key_dialogRoundCheckBoxCheck)
+            clear_checkbox.setDrawUnchecked(True)
+            clear_checkbox.setDrawBackgroundAsArc(10)
+            clear_checkbox.setChecked(False, False)
+            clear_checkbox.setVisibility(1)
+            clear_container = FrameLayout(act)
+            btn_bg = GradientDrawable()
+            btn_bg.setCornerRadius(AndroidUtilities.dp(18))
+            try:
+                bg_color = Theme.getColor(Theme.key_chat_inLoader) & 0x20FFFFFF | 0x10000000
+            except Exception:
+                bg_color = Color.parseColor("#F0F0F0")
+            btn_bg.setColor(bg_color)
+            try:
+                from android.graphics.drawable import RippleDrawable
+                from android.content.res import ColorStateList
+                ripple_color = ColorStateList.valueOf(Color.parseColor("#40000000"))
+                ripple_drawable = RippleDrawable(ripple_color, btn_bg, None)
+                clear_container.setBackground(ripple_drawable)
+            except Exception:
+                clear_container.setBackground(btn_bg)
+            clear_inner_layout = LinearLayout(act)
+            clear_inner_layout.setOrientation(LinearLayout.HORIZONTAL)
+            clear_inner_layout.setGravity(Gravity.CENTER_VERTICAL)
+            clear_inner_layout.setPadding(AndroidUtilities.dp(8), AndroidUtilities.dp(8), AndroidUtilities.dp(8), AndroidUtilities.dp(8))
+            clear_inner_layout.setMinimumHeight(AndroidUtilities.dp(40))
+            clear_inner_layout.addView(clear_checkbox, LayoutHelper.createLinear(24, 24, Gravity.CENTER_VERTICAL, 0, 0, 8, 0))
+            clear_text = TextView(act)
+            clear_text.setText(t('clear_all_templates', lang=self.lang))
+            clear_text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            clear_text.setGravity(Gravity.CENTER_VERTICAL)
+            try:
+                clear_text.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+            except Exception:
+                clear_text.setTextColor(Color.BLACK)
+            clear_inner_layout.addView(clear_text)
+            clear_container.addView(clear_inner_layout)
+            def toggle_clear_all(v):
+                current_state = clear_checkbox.isChecked()
+                clear_checkbox.setChecked(not current_state, True)
+            clear_container.setOnClickListener(OnClickListener(toggle_clear_all))
+            root_layout.addView(clear_container, LayoutHelper.createLinear(-2, -2, Gravity.CENTER, 0, 0, 0, 16))
             divider = View(act)
             try:
                 divider.setBackgroundColor(Theme.getColor(Theme.key_divider))
@@ -2567,23 +2763,62 @@ class TemplatesPlugin(BasePlugin):
             except Exception:
                 import_button.setBackgroundColor(Color.BLUE)
                 import_button.setTextColor(Color.WHITE)
-            
             def do_import(v):
                 try:
                     selected_templates = [templates[i] for i in selected_indices if i < len(templates)]
-                    self.set_setting("templates_created_count", min(max(len(selected_templates), 1), TEMPLATE_COUNT), reload_settings=True)
-                    self.templates = []
-                    for i in range(TEMPLATE_COUNT):
-                        if i < len(selected_templates):
-                            item = selected_templates[i] or {}
+                    clear_all_enabled = clear_checkbox.isChecked()
+                    if clear_all_enabled:
+                        self.set_setting("templates_created_count", min(max(len(selected_templates), 1), TEMPLATE_COUNT), reload_settings=True)
+                        self.templates = []
+                        for i in range(TEMPLATE_COUNT):
+                            if i < len(selected_templates):
+                                item = selected_templates[i] or {}
+                                name = str(item.get("name", ""))
+                                text = str(item.get("text", ""))
+                            else:
+                                name = ""
+                                text = ""
+                            self.set_setting(f"template_name_{i}", name, reload_settings=True)
+                            self.set_setting(f"template_text_{i}", text, reload_settings=True)
+                            self.templates.append({"name": name, "text": text, "enabled": True if i == 0 else bool(name and text)})
+                    else:
+                        current_templates = self.get_setting("templates", [])
+                        existing_count = 0
+                        for i, template in enumerate(current_templates):
+                            if template.get("name", "").strip() or template.get("text", "").strip():
+                                existing_count = i + 1
+                        total_count = existing_count + len(selected_templates)
+                        if total_count > TEMPLATE_COUNT:
+                            sheet.dismiss()
+                            from ui.bulletin import BulletinHelper
+                            try:
+                                from org.telegram.messenger import R as R_tg
+                                icon_attr = getattr(R_tg.raw, 'error', None)
+                            except Exception:
+                                icon_attr = None
+                            run_on_ui_thread(lambda: BulletinHelper.show_error(
+                                t('templates_limit_exceeded', lang=self.lang)
+                            ))
+                            return
+                        updated_templates = current_templates[:] if current_templates else []
+                        for i, template in enumerate(selected_templates):
+                            index = existing_count + i
+                            if index >= TEMPLATE_COUNT:
+                                break
+                            item = template or {}
                             name = str(item.get("name", ""))
                             text = str(item.get("text", ""))
-                        else:
-                            name = ""
-                            text = ""
-                        self.set_setting(f"template_name_{i}", name, reload_settings=True)
-                        self.set_setting(f"template_text_{i}", text, reload_settings=True)
-                        self.templates.append({"name": name, "text": text, "enabled": True if i == 0 else bool(name and text)})
+                            self.set_setting(f"template_name_{index}", name, reload_settings=True)
+                            self.set_setting(f"template_text_{index}", text, reload_settings=True)
+                            if index < len(updated_templates):
+                                updated_templates[index] = {"name": name, "text": text, "enabled": True if index == 0 else bool(name and text)}
+                            else:
+                                while len(updated_templates) <= index:
+                                    updated_templates.append({"name": "", "text": "", "enabled": False})
+                                updated_templates[index] = {"name": name, "text": text, "enabled": True if index == 0 else bool(name and text)}
+                        self.templates = updated_templates
+                        final_count = max(existing_count + len(selected_templates), existing_count)
+                        self.set_setting("templates_created_count", min(final_count, TEMPLATE_COUNT), reload_settings=True)
                     self.set_setting("templates", self.templates, reload_settings=True)
                     from ui.bulletin import BulletinHelper
                     try:
@@ -3001,7 +3236,6 @@ class TemplatesPlugin(BasePlugin):
             textTextView.setMaxLines(3)
             buttonContainer.addView(textTextView)
             return buttonContainer
-
         for i, template in enumerate(templates):
             btn = create_template_button(template)
             buttonsLayout.addView(btn, LayoutHelper.createFrame(-1, -2, Gravity.TOP, 16, 4, 16, 4))
