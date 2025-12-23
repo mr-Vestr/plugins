@@ -27,4 +27,4 @@
 
 ---
 
-Следите за моими плагинами в [Telegram](https://t.me/I_am_Vestr) | [ExteraStore](https://exterastore.app/developers/2037728749)
+Следите за моими плагинами в [Telegram](https://t.me/I_am_Vestr) | [ExteraStore](https://exterastore.app/developers/2037728749).
