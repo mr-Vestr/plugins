@@ -81,7 +81,7 @@ __description__ = """Плагин для быстрого создания пл�
 
 Plugin for quick plugin creation from code."""
 __author__ = "@mr_Vestr"
-__version__ = "1.0"
+__version__ = "1.1"
 __min_version__ = "12.1.1"
 __icon__ = "mr_vestr/12"
 
@@ -95,7 +95,7 @@ LANG = {
         'drawer_menu_sub': 'Добавляет кнопку настроек создателя плагинов в боковое меню.',
         'chat_plugins_menu': 'Кнопка в плагинах в чате',
         'chat_plugins_menu_sub': 'Добавляет кнопку настроек создателя плагинов в меню плагинов в чате.',
-        'send_name': 'Имя файлов плагинов',
+        'send_name': 'Название файла',
         'send_name_sub': 'Введите имя для файлов плагинов.',
         'send_message': 'Текст сообщения',
         'send_message_sub': 'Текст сообщения при отправке плагина (пусто = без текста).',
@@ -104,11 +104,11 @@ LANG = {
         'channel_1': 'Мой канал — @I_am_Vestr',
         'personal_1': 'Моя личка — @mr_Vestr',
         'other': 'Другое',
-        'plugin_version': 'Версия плагина — 1.0',
+        'plugin_version': 'Версия плагина — 1.1',
         'updates': 'Обновления',
         'current_version': 'Текущая версия: {version}',
         'updates_info': 'Новые версии будут в моём телеграм канале.',
-        'check_updates': 'Проверить',
+        'check_updates': 'Проверить обновление',
         'close': 'Закрыть',
         'send': 'Отправить',
         'enter_plugin_code': 'Введите код плагина',
@@ -126,6 +126,20 @@ LANG = {
         'link_copied': 'Ссылка скопирована',
         'copied_to_clipboard': 'Скопировано в буфер обмена',
         'error_prefix': 'Ошибка:',
+        'how_it_works': 'Как это работает?',
+        'how_it_works_text': '''**Plugin creator — позволяет удобно создавать файл плагинов из готового кода, есть много настроек и быстрая вставка.**
+
+**Возможности:**
+• Быстро из текста создать файл плагина. Например, вы попросили ИИ создать плагин, он написал вам код, и вы можете обернуть этот код в плагин прямо в Telegram;
+• В чате, куда хотите отправить плагин, нажмите «⁝» → «Создать плагин». Тут можно писать текст или быстро вставить его и нажать «Отправить»;
+• Поддерживаются два языка (русский и английский).
+
+**Настройки:**
+• Возможность добавить кнопку «Создать плагин» в меню чата или меню плагинов в чате;
+• Также можно изменить имя отправляемого файла;
+• И можно изменить текст в сообщении у файла.
+
+**Если вы хотите предложить идею для улучшения плагина, сообщить об ошибке или что-то другое, то пишите в сообщения к каналу @I_am_Vestr или мне в личные сообщения @mr_Vestr.**''',
     },
     'en': {
         'settings': 'Settings',
@@ -144,7 +158,7 @@ LANG = {
         'channel_1': 'My channel — @I_am_Vestr',
         'personal_1': 'My DM — @mr_Vestr',
         'other': 'Other',
-        'plugin_version': 'Plugin version — 1.0',
+        'plugin_version': 'Plugin version — 1.1',
         'updates': 'Updates',
         'current_version': 'Current version: {version}',
         'updates_info': 'New versions are available in my Telegram channel.',
@@ -166,6 +180,20 @@ LANG = {
         'link_copied': 'Link copied',
         'copied_to_clipboard': 'Copied to clipboard',
         'error_prefix': 'Error:',
+        'how_it_works': 'How does it work?',
+        'how_it_works_text': '''**Plugin creator — allows you to easily create plugin files from ready-made code, has many settings and quick insertion.**
+
+**Features:**
+• Quickly create a plugin file from text. For example, you asked AI to create a plugin, it wrote you code, and you can wrap this code into a plugin right in Telegram;
+• In the chat where you want to send the plugin, tap "⁝" → "Create plugin". Here you can write text or quickly paste it and tap "Send";
+• Two languages are supported (Russian and English).
+
+**Settings:**
+• Ability to add "Create plugin" button to chat menu or plugins menu in chat;
+• You can also change the name of the sent file;
+• And you can change the text in the file message.
+
+**If you want to suggest an idea for improving the plugin, report a bug, or anything else, write to the @I_am_Vestr channel or DM @mr_Vestr.**''',
     }
 }
 
@@ -228,6 +256,7 @@ class PluginCreatorPlugin(BasePlugin):
         except Exception:
             pass
         self._hook_chat_activity_resume()
+        self._force_load_stickers()
 
     def set_setting(self, key, value, reload_settings=False):
         try:
@@ -257,10 +286,46 @@ class PluginCreatorPlugin(BasePlugin):
                 plugin = PluginsController.getInstance().plugins.get(self.id)
                 if plugin:
                     fragment.presentFragment(PluginSettingsActivity(plugin))
+                    self._force_load_stickers()
             except Exception as e:
                 from ui.bulletin import BulletinHelper
                 BulletinHelper.show_error(t('open_settings_error', lang=self.lang, error=str(e)))
         run_on_ui_thread(_open_settings)
+
+    def _force_load_stickers(self):
+        try:
+            from client_utils import get_last_fragment
+            from org.telegram.messenger import MediaDataController
+            from org.telegram.tgnet import TLRPC
+
+            def load_stickers():
+                try:
+                    fragment = get_last_fragment()
+                    current_account = 0
+                    try:
+                        if fragment is not None and hasattr(fragment, 'getCurrentAccount'):
+                            current_account = fragment.getCurrentAccount()
+                        else:
+                            from org.telegram.messenger import UserConfig
+                            current_account = UserConfig.selectedAccount
+                    except Exception:
+                        try:
+                            from org.telegram.messenger import UserConfig
+                            current_account = UserConfig.selectedAccount
+                        except Exception:
+                            current_account = 0
+                    media_controller = MediaDataController.getInstance(current_account)
+                    if media_controller:
+                        input_set = TLRPC.TL_inputStickerSetShortName()
+                        input_set.short_name = "mr_vestr"
+                        media_controller.getStickerSet(input_set, None, False, None)
+                except Exception:
+                    pass
+            from android_utils import run_on_ui_thread
+            from org.telegram.messenger import AndroidUtilities
+            AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(load_stickers), 1000)
+        except Exception:
+            pass
 
     def _update_chat_menu(self):
         show_chat = self.get_setting('show_chat_menu', True)
@@ -940,6 +1005,7 @@ class PluginCreatorPlugin(BasePlugin):
             self._show_error_with_copy(t('error_occurred_with_reason', lang=self.lang, error=str(e)))
 
     def _show_support_me_menu(self, _):
+        self._force_load_stickers()
         from org.telegram.ui.ActionBar import BottomSheet, Theme
         from android.widget import LinearLayout, TextView, ScrollView, FrameLayout, ImageView
         from android.view import Gravity, View
@@ -948,7 +1014,7 @@ class PluginCreatorPlugin(BasePlugin):
         from org.telegram.messenger import AndroidUtilities, MediaDataController, ImageLocation
         from android.graphics.drawable import GradientDrawable
         from android.graphics import Color
-        from android_utils import OnClickListener
+        from android_utils import OnClickListener, run_on_ui_thread
         from client_utils import get_last_fragment
         from org.telegram.messenger.browser import Browser
         from android.net import Uri
@@ -967,6 +1033,7 @@ class PluginCreatorPlugin(BasePlugin):
         try:
             avatar_view = BackupImageView(act)
             avatar_view.setRoundRadius(AndroidUtilities.dp(45))
+            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
             try:
                 current_account = frag.getCurrentAccount()
             except Exception:
@@ -974,11 +1041,29 @@ class PluginCreatorPlugin(BasePlugin):
             media_controller = MediaDataController.getInstance(current_account)
             if media_controller:
                 sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 9:
+                if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 9:
+                    from org.telegram.tgnet import TLRPC
+                    input_set = TLRPC.TL_inputStickerSetShortName()
+                    input_set.short_name = "mr_vestr"
+                    media_controller.getStickerSet(input_set, None, False, None)
+                    def retry_load_sticker(attempt=0):
+                        try:
+                            if attempt < 5:
+                                sticker_set = media_controller.getStickerSetByName("mr_vestr")
+                                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 9:
+                                    sticker_document = sticker_set.documents.get(9)
+                                    image_location = ImageLocation.getForDocument(sticker_document)
+                                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                                else:
+                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                        except Exception:
+                            if attempt < 5:
+                                AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
+                elif sticker_set.documents.size() > 9:
                     sticker_document = sticker_set.documents.get(9)
                     image_location = ImageLocation.getForDocument(sticker_document)
                     avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
         except Exception:
             pass
         title_view = TextView(act)
@@ -1137,7 +1222,186 @@ class PluginCreatorPlugin(BasePlugin):
                 from ui.bulletin import BulletinHelper
                 BulletinHelper.show_error(t('link_open_error', lang=self.lang, error=str(e)))
 
+    def _show_how_it_works(self, _):
+        from org.telegram.ui.ActionBar import BottomSheet, Theme
+        from android.widget import LinearLayout, TextView, ScrollView, FrameLayout
+        from android.view import Gravity, View
+        from android.util import TypedValue
+        from org.telegram.ui.Components import LayoutHelper
+        from org.telegram.messenger import AndroidUtilities
+        from android.graphics.drawable import GradientDrawable
+        from android.graphics import Color
+        from android_utils import OnClickListener
+        from client_utils import get_last_fragment
+        from markdown_utils import parse_markdown
+        frag = get_last_fragment()
+        act = frag.getParentActivity() if frag else None
+        if not act:
+            return
+        sheet = BottomSheet(act, False)
+        root_layout = LinearLayout(act)
+        root_layout.setOrientation(LinearLayout.VERTICAL)
+        root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(20))
+        try:
+            root_layout.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground))
+        except Exception:
+            pass
+        title_view = TextView(act)
+        title_view.setTypeface(AndroidUtilities.bold())
+        title_view.setGravity(Gravity.CENTER)
+        title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24)
+        title_view.setText(t('how_it_works', lang=self.lang))
+        try:
+            title_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+        except Exception:
+            pass
+        root_layout.addView(title_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 12))
+        body_scroll = ScrollView(act)
+        body_scroll.setVerticalScrollBarEnabled(False)
+        body_scroll.setPadding(AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4), 0)
+        try:
+            body_scroll.setNestedScrollingEnabled(True)
+        except Exception:
+            pass
+        body_tv = TextView(act)
+        text = t('how_it_works_text', lang=self.lang)
+        try:
+            from android.text import SpannableString, Spannable
+            from android.text.style import StyleSpan
+            from android.graphics import Typeface
+            import re
+            parts = re.split(r'(\*\*.*?\*\*)', text)
+            spannable = SpannableString(text.replace('**', ''))
+            start = 0
+            for i, part in enumerate(parts):
+                if part.startswith('**') and part.endswith('**'):
+                    clean_text = part[2:-2]
+                    end = start + len(clean_text)
+                    spannable.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    start = end
+                else:
+                    start += len(part)
+            body_tv.setText(spannable)
+        except Exception:
+            body_tv.setText(text)
+        body_tv.setTextIsSelectable(True)
+        body_tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15)
+        try:
+            body_tv.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+        except Exception:
+            pass
+        try:
+            body_tv.setLineSpacing(AndroidUtilities.dp(4), 1.15)
+        except Exception:
+            pass
+        body_scroll.addView(body_tv)
+        root_layout.addView(body_scroll, LayoutHelper.createLinear(-1, 0, 1.0))
+        divider = View(act)
+        try:
+            divider_color = Theme.getColor(Theme.key_divider)
+        except Exception:
+            divider_color = Color.parseColor("#E0E0E0")
+        divider.setBackgroundColor(divider_color)
+        root_layout.addView(divider, LayoutHelper.createLinear(-1, 1, 0, 16, 0, 12))
+        
+        def create_link_button(text: str, icon_res: str, on_click):
+            from androidx.core.content import ContextCompat
+            from android.widget import ImageView
+            btn_frame = FrameLayout(act)
+            btn_bg = GradientDrawable()
+            btn_bg.setCornerRadius(AndroidUtilities.dp(18))
+            try:
+                bg_color = Theme.getColor(Theme.key_chat_inLoader) & 0x20FFFFFF | 0x10000000
+            except Exception:
+                bg_color = Color.parseColor("#F0F0F0")
+            btn_bg.setColor(bg_color)
+            try:
+                from android.graphics.drawable import RippleDrawable
+                from android.content.res import ColorStateList
+                ripple_color = ColorStateList.valueOf(Color.parseColor("#40000000"))
+                ripple_drawable = RippleDrawable(ripple_color, btn_bg, None)
+                btn_frame.setBackground(ripple_drawable)
+            except Exception:
+                btn_frame.setBackground(btn_bg)
+            btn_layout = LinearLayout(act)
+            btn_layout.setOrientation(LinearLayout.HORIZONTAL)
+            btn_layout.setGravity(Gravity.CENTER_VERTICAL)
+            btn_layout.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(10), AndroidUtilities.dp(14), AndroidUtilities.dp(10))
+            btn_layout.setMinimumHeight(AndroidUtilities.dp(40))
+            if icon_res:
+                try:
+                    from android.graphics import PorterDuff
+                    icon_view = ImageView(act)
+                    icon_view.setScaleType(ImageView.ScaleType.FIT_CENTER)
+                    icon_drawable = ContextCompat.getDrawable(act, getattr(__import__('org.telegram.messenger', fromlist=['R']).R.drawable, icon_res))
+                    icon_drawable.setColorFilter(Theme.getColor(Theme.key_dialogTextBlack), PorterDuff.Mode.SRC_IN)
+                    icon_view.setImageDrawable(icon_drawable)
+                    btn_layout.addView(icon_view, LayoutHelper.createLinear(16, 16, Gravity.CENTER_VERTICAL, 0, 0, 6, 0))
+                except Exception:
+                    pass
+            label_text = TextView(act)
+            label_text.setText(text)
+            label_text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            try:
+                label_text.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+            except Exception:
+                label_text.setTextColor(Color.parseColor("#000000"))
+            label_text.setGravity(Gravity.CENTER_VERTICAL)
+            btn_layout.addView(label_text, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL))
+            btn_frame.addView(btn_layout)
+            btn_frame.setClickable(True)
+            btn_frame.setFocusable(True)
+            btn_frame.setOnClickListener(OnClickListener(lambda *_: on_click(btn_frame)))
+            return btn_frame
+        
+        def on_channel(v):
+            try:
+                sheet.dismiss()
+                self._open_channel_link(None)
+            except Exception:
+                pass
+        
+        def on_personal(v):
+            try:
+                sheet.dismiss()
+                self._open_personal_link(None)
+            except Exception:
+                pass
+        
+        actions_row = LinearLayout(act)
+        actions_row.setOrientation(LinearLayout.HORIZONTAL)
+        actions_row.setGravity(Gravity.CENTER)
+        channel_btn = create_link_button(t('channel', lang=self.lang), 'msg_channel', on_channel)
+        personal_btn = create_link_button(t('personal', lang=self.lang), 'msg_contacts', on_personal)
+        channel_btn.setMinimumWidth(AndroidUtilities.dp(100))
+        personal_btn.setMinimumWidth(AndroidUtilities.dp(100))
+        actions_row.addView(channel_btn, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL, 0, 0, 6, 0))
+        actions_row.addView(personal_btn, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL, 0, 0, 0, 0))
+        root_layout.addView(actions_row, LayoutHelper.createLinear(-1, -2, 0, 0, 0, 12))
+        close_btn_frame = FrameLayout(act)
+        close_btn_frame.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+            AndroidUtilities.dp(10),
+            Theme.getColor(Theme.key_featuredStickers_addButton),
+            Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+        ))
+        close_btn_frame.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
+        close_btn_frame.setClickable(True)
+        close_btn_frame.setFocusable(True)
+        close_btn_text = TextView(act)
+        close_btn_text.setText(t('close', lang=self.lang))
+        close_btn_text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
+        close_btn_text.setTypeface(AndroidUtilities.bold())
+        close_btn_text.setGravity(Gravity.CENTER)
+        close_btn_text.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
+        close_btn_frame.addView(close_btn_text, FrameLayout.LayoutParams(-1, -2))
+        close_btn_frame.setOnClickListener(OnClickListener(lambda *_: sheet.dismiss()))
+        root_layout.addView(close_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 0, 0, 0))
+        sheet.setCustomView(root_layout)
+        sheet.setCanDismissWithSwipe(False)
+        sheet.show()
+
     def _show_version_dialog(self, _):
+        self._force_load_stickers()
         from org.telegram.ui.ActionBar import BottomSheet, Theme
         from android.widget import LinearLayout, TextView, ScrollView, FrameLayout
         from android.view import Gravity, View
@@ -1146,7 +1410,7 @@ class PluginCreatorPlugin(BasePlugin):
         from org.telegram.messenger import AndroidUtilities, MediaDataController, ImageLocation
         from android.graphics.drawable import GradientDrawable
         from android.graphics import Color
-        from android_utils import OnClickListener
+        from android_utils import OnClickListener, run_on_ui_thread
         from client_utils import get_last_fragment
         from org.telegram.messenger.browser import Browser
         from android.net import Uri
@@ -1165,6 +1429,7 @@ class PluginCreatorPlugin(BasePlugin):
         try:
             avatar_view = BackupImageView(act)
             avatar_view.setRoundRadius(AndroidUtilities.dp(45))
+            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
             try:
                 current_account = frag.getCurrentAccount()
             except Exception:
@@ -1172,11 +1437,29 @@ class PluginCreatorPlugin(BasePlugin):
             media_controller = MediaDataController.getInstance(current_account)
             if media_controller:
                 sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 1:
+                if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 1:
+                    from org.telegram.tgnet import TLRPC
+                    input_set = TLRPC.TL_inputStickerSetShortName()
+                    input_set.short_name = "mr_vestr"
+                    media_controller.getStickerSet(input_set, None, False, None)
+                    def retry_load_sticker(attempt=0):
+                        try:
+                            if attempt < 5:
+                                sticker_set = media_controller.getStickerSetByName("mr_vestr")
+                                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 1:
+                                    sticker_document = sticker_set.documents.get(1)
+                                    image_location = ImageLocation.getForDocument(sticker_document)
+                                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                                else:
+                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                        except Exception:
+                            if attempt < 5:
+                                AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
+                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
+                elif sticker_set.documents.size() > 1:
                     sticker_document = sticker_set.documents.get(1)
                     image_location = ImageLocation.getForDocument(sticker_document)
                     avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
         except Exception:
             pass
         title_view = TextView(act)
@@ -1331,10 +1614,18 @@ class PluginCreatorPlugin(BasePlugin):
         settings.append(Divider())
         settings.append(Header(text=t('other', lang=self.lang)))
         settings.append(Text(
+            text=t('how_it_works', lang=self.lang),
+            icon='msg_info',
+            on_click=self._show_how_it_works,
+            link_alias='how_it_works'
+        ))
+        settings.append(Text(
             text=t('plugin_version', lang=self.lang),
             icon='msg_settings_14',
             accent=True,
             on_click=lambda ctx: self._show_version_dialog(ctx),
             link_alias='plugin_version'
         ))
+        settings.append(Divider())
+        settings.append(Divider())
         return settings
