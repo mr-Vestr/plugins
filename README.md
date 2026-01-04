@@ -23,7 +23,7 @@
 - У плагина есть гибкие настройки;
 - Имеется поддержка двух языков и тд. 
 
-**Подробнее про [Plugin creator](https://github.com/mr-Vestr/plugins/blob/main/Plugin%20creator/PLUGIN_CREATOR.md).**
+**Подробнее про [Plugin creator](https://github.com/mr-Vestr/plugins/blob/main/Plugin%20creator/PLUGIN_CREATOR_RU.md).**
 
 ---
 
