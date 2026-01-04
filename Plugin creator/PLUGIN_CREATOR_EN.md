@@ -50,4 +50,4 @@
 
 ---
 
-[![download](https://github.com/user-attachments/assets/26cf511b-0c91-4d31-938b-a2a6faa890a2)](https://github.com/mr-Vestr/plugins/releases/tag/Plugin_creator_1.1)ㅤ[![canal](https://github.com/user-attachments/assets/05613a8b-489c-4652-8181-fbe80856d841)](https://t.me/I_am_Vestr)
+[![download](https://github.com/user-attachments/assets/26cf511b-0c91-4d31-938b-a2a6faa890a2)](https://github.com/mr-Vestr/plugins/releases/tag/Plugin_creator_2.0)ㅤ[![canal](https://github.com/user-attachments/assets/05613a8b-489c-4652-8181-fbe80856d841)](https://t.me/I_am_Vestr)
