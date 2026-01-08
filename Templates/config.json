@@ -1,7 +1,7 @@
 {
   "name": "templates",
-  "version": "3.4",
-  "sticker": "Miside56/0",
+  "version": "3.3",
+  "sticker": "pack1579_by_Stick4uBot/25",
   "link": "https://github.com/mr-Vestr/plugins/releases/download/Templates_3.2/templates.plugin",
-  "changelog": "• Изменение 1\n• Изменение 2"
+  "changelog": "• Обновлён дизайн и добавлены анимации в всплывающее меню\n• Добавлено проверка и обновление плагина\n• Обновлено меню «Как это работает?»\n• Обновлён README.md и добавлена его английская версия\n• И пару других изменений"
 }
