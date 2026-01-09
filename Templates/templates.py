@@ -34,9 +34,14 @@ from base_plugin import BasePlugin, MenuItemData, MenuItemType, HookResult, Hook
 from ui.settings import Divider, Header, Input, Switch, Text
 from android_utils import run_on_ui_thread
 import urllib.parse
+import urllib.request
 import locale
 import os
 import re
+import json
+import threading
+import time
+import base64
 from markdown_utils import parse_markdown
 from org.telegram.ui import DialogsActivity, LaunchActivity
 from android.os import Bundle
@@ -76,7 +81,7 @@ __description__ = """A plugin for creating, editing, and quickly sending message
 
 Плагин для создания, редактирования и быстрой отправки шаблонов сообщений."""
 __author__ = "@mr_Vestr"
-__version__ = "3.2"
+__version__ = "3.3"
 __min_version__ = "12.1.1"
 __icon__ = "mr_vestr/7"
 
@@ -102,7 +107,8 @@ LANG = {
 
 Отправить шаблон можно:
 1. В настройках плагина, нажав кнопку «Отправить шаблон» и выбрав нужный чат;
-2. Через поле ввода сообщения в уже открытом нужном чате, прописав команду и название шаблона. Пример: «// Название».
+2. Через поле ввода сообщения в уже открытом нужном чате, прописав команду и название шаблона. Пример: «// Название»;
+3. Нажав кнопку "Шаблоны" в меню чата или меню плагинов в чате.
 
 Также вы можете использовать режим форматирования: **жирный**, __подчёркнутый__, ~~зачёркнутый~~, `моноширинный`, --курсив--, ||спойлер||.
 
@@ -136,7 +142,7 @@ LANG = {
         'channel_1': 'Мой канал — @I_am_Vestr',
         'personal_1': 'Моя личка — @mr_Vestr',
         'other': 'Другое',
-        'plugin_version': 'Версия плагина — 3.2',
+        'plugin_version': 'Версия плагина — 3.3',
         'updates': 'Обновления',
         'current_version': 'Текущая версия: {version}',
         'updates_info': 'Новые версии будут в моём телеграм канале.',
@@ -197,6 +203,9 @@ LANG = {
         'error_prefix': 'Ошибка:',
         'clear_all_templates': 'Очистить все шаблоны',
         'templates_limit_exceeded': 'Количество шаблонов не может превышать 30 шт.',
+        'checking_updates': 'Проверка обновления Templates...',
+        'no_updates_available': 'У вас последняя версия плагина.',
+        'update_check_error': 'Ошибка проверки обновлений: {error}',
     },
     'en': {
         'name': 'Template name',
@@ -216,7 +225,8 @@ To create a template:
 
 To send a template:
 1. In plugin settings, press "Send template" and choose a chat;
-2. In the chat input, type the command and template name. Example: "// Name".
+2. In the chat input, type the command and template name. Example: "// Name";
+3. By clicking the "Templates" button in the chat menu or the plugins menu in the chat.
 
 You can also use Parse mode: **bold**, __underlined__, ~~strikethrough~~, `monotype`, --italic--, ||spoiler||.
 
@@ -250,11 +260,14 @@ If you want to suggest an idea, report a bug, or anything else, write to the @I_
         'channel_1': 'My channel — @I_am_Vestr',
         'personal_1': 'My DM — @mr_Vestr',
         'other': 'Other',
-        'plugin_version': 'Plugin version — 3.2',
+        'plugin_version': 'Plugin version — 3.3',
         'updates': 'Updates',
         'current_version': 'Current version: {version}',
         'updates_info': 'New versions are available in my Telegram channel.',
         'check_updates': 'Check updates',
+        'checking_updates': 'Checking updates for Templates...',
+        'no_updates_available': 'You have the latest version of the plugin.',
+        'update_check_error': 'Update check error: {error}',
         'edit_template': 'Edit template {n}',
         'save': 'Save',
         'cancel': 'Cancel',
@@ -381,6 +394,22 @@ class TemplatesPlugin(BasePlugin):
     def on_plugin_load(self):
         self.update_info_cache = None
         self.last_update_check = 0
+        self.update_available = False
+        self.latest_version = None
+        self.changelog = None
+        self.download_url = None
+        self.checking_update = False
+        self.sticker_pack = None
+        self.sticker_index = None
+        try:
+            from org.telegram.messenger import LocaleController
+            lang_code = LocaleController.getInstance().getCurrentLocale().getLanguage()
+        except Exception:
+            lang_code = ''
+        if lang_code.lower().startswith('ru'):
+            self.lang = 'ru'
+        else:
+            self.lang = 'en'
         if not hasattr(self, '_settings') or not self._settings:
             self.set_setting('show_chat_menu', self.get_setting('show_chat_menu', True), reload_settings=False)
             self.set_setting('show_chat_plugins_menu', self.get_setting('show_chat_plugins_menu', False), reload_settings=False)
@@ -402,6 +431,7 @@ class TemplatesPlugin(BasePlugin):
         self._add_document_hook()
         self._hook_chat_activity_resume()
         self._force_load_stickers()
+        self._check_for_updates_on_load()
 
     def set_setting(self, key, value, reload_settings=False):
         try:
@@ -443,7 +473,6 @@ class TemplatesPlugin(BasePlugin):
             from client_utils import get_last_fragment
             from org.telegram.messenger import MediaDataController
             from org.telegram.tgnet import TLRPC
-            
             def load_stickers():
                 try:
                     fragment = get_last_fragment()
@@ -456,10 +485,33 @@ class TemplatesPlugin(BasePlugin):
                             media_controller.getStickerSet(input_set, None, False, None)
                 except Exception:
                     pass
-            
             from android_utils import run_on_ui_thread
             from org.telegram.messenger import AndroidUtilities
             AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(load_stickers), 1000)
+        except Exception:
+            pass
+
+    def _apply_press_scale(self, view):
+        try:
+            from android.view import View, MotionEvent
+            from java import dynamic_proxy
+            class _TouchListener(dynamic_proxy(View.OnTouchListener)):
+                def __init__(self, fn):
+                    super().__init__()
+                    self._fn = fn
+                def onTouch(self, v, event):
+                    return self._fn(v, event)
+            def _on_touch(v, event):
+                try:
+                    action = event.getActionMasked()
+                    if action == MotionEvent.ACTION_DOWN:
+                        v.animate().scaleX(0.94).scaleY(0.94).setDuration(100).start()
+                    elif action in (MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL):
+                        v.animate().scaleX(1.0).scaleY(1.0).setDuration(200).start()
+                except Exception:
+                    pass
+                return False
+            view.setOnTouchListener(_TouchListener(_on_touch))
         except Exception:
             pass
 
@@ -886,7 +938,14 @@ class TemplatesPlugin(BasePlugin):
         sheet = BottomSheet(act, False)
         root_layout = LinearLayout(act)
         root_layout.setOrientation(LinearLayout.VERTICAL)
-        root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(20))
+        root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
+        try:
+            root_layout.setAlpha(0.0)
+            root_layout.setScaleX(0.3)
+            root_layout.setScaleY(0.3)
+            root_layout.setTranslationY(AndroidUtilities.dp(100))
+        except Exception:
+            pass
         try:
             root_layout.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground))
         except Exception:
@@ -900,12 +959,26 @@ class TemplatesPlugin(BasePlugin):
             title_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
         except Exception:
             pass
+        try:
+            title_view.setAlpha(0.0)
+            title_view.setTranslationY(AndroidUtilities.dp(50))
+            title_view.setScaleX(0.8)
+            title_view.setScaleY(0.8)
+        except Exception:
+            pass
         root_layout.addView(title_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 12))
         body_scroll = ScrollView(act)
         body_scroll.setVerticalScrollBarEnabled(False)
         body_scroll.setPadding(AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4), 0)
         try:
             body_scroll.setNestedScrollingEnabled(True)
+        except Exception:
+            pass
+        try:
+            body_scroll.setAlpha(0.0)
+            body_scroll.setTranslationY(AndroidUtilities.dp(30))
+            body_scroll.setScaleX(0.8)
+            body_scroll.setScaleY(0.8)
         except Exception:
             pass
         body_tv = TextView(act)
@@ -931,7 +1004,6 @@ class TemplatesPlugin(BasePlugin):
         root_layout.addView(divider, LayoutHelper.createLinear(-1, 1, 0, 16, 0, 12))
         
         def create_link_button(text: str, icon_res: str, on_click):
-            from androidx.core.content import ContextCompat
             from android.widget import ImageView
             btn_frame = FrameLayout(act)
             btn_bg = GradientDrawable()
@@ -949,39 +1021,37 @@ class TemplatesPlugin(BasePlugin):
                 btn_frame.setBackground(ripple_drawable)
             except Exception:
                 btn_frame.setBackground(btn_bg)
-            btn_layout = LinearLayout(act)
-            btn_layout.setOrientation(LinearLayout.HORIZONTAL)
-            btn_layout.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL)
-            btn_layout.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(10), AndroidUtilities.dp(14), AndroidUtilities.dp(10))
-            btn_layout.setMinimumHeight(AndroidUtilities.dp(40))
-            if icon_res:
-                try:
-                    from android.graphics import PorterDuff
-                    icon_view = ImageView(act)
-                    icon_view.setScaleType(ImageView.ScaleType.FIT_CENTER)
-                    icon_drawable = ContextCompat.getDrawable(act, getattr(__import__('org.telegram.messenger', fromlist=['R']).R.drawable, icon_res))
-                    icon_drawable.setColorFilter(Theme.getColor(Theme.key_dialogTextBlack), PorterDuff.Mode.SRC_IN)
-                    icon_view.setImageDrawable(icon_drawable)
-                    btn_layout.addView(icon_view, LayoutHelper.createLinear(16, 16, Gravity.CENTER_VERTICAL, 0, 0, 6, 0))
-                except Exception:
-                    pass
-            label_text = TextView(act)
-            label_text.setText(text)
-            label_text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
-            label_text.setGravity(Gravity.CENTER_VERTICAL)
+            btn_frame.setPadding(AndroidUtilities.dp(12), AndroidUtilities.dp(8), AndroidUtilities.dp(12), AndroidUtilities.dp(8))
+            icon_view = ImageView(act)
             try:
-                label_text.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+                from org.telegram.messenger import R as R_tg
+                icon_view.setImageResource(getattr(R_tg.drawable, icon_res))
             except Exception:
-                label_text.setTextColor(Color.parseColor("#000000"))
-            btn_layout.addView(label_text, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL))
-            btn_frame.addView(btn_layout)
+                pass
+            icon_view.setScaleType(ImageView.ScaleType.CENTER)
+            icon_view.setColorFilter(Theme.getColor(Theme.key_dialogTextBlue))
+            text_view = TextView(act)
+            text_view.setText(text)
+            text_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            text_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlue))
+            text_view.setGravity(Gravity.CENTER_VERTICAL)
+            btn_frame.addView(icon_view, LayoutHelper.createFrame(20, 20, Gravity.LEFT | Gravity.CENTER_VERTICAL, 0, 0, 8, 0))
+            btn_frame.addView(text_view, LayoutHelper.createFrame(-2, -2, Gravity.LEFT | Gravity.CENTER_VERTICAL, 28, 0, 0, 0))
             btn_frame.setClickable(True)
             btn_frame.setFocusable(True)
+            self._apply_press_scale(btn_frame)
             btn_frame.setOnClickListener(OnClickListener(lambda *_: on_click(btn_frame)))
             return btn_frame
         actions_row = LinearLayout(act)
         actions_row.setOrientation(LinearLayout.HORIZONTAL)
         actions_row.setGravity(Gravity.CENTER)
+        try:
+            actions_row.setAlpha(0.0)
+            actions_row.setTranslationY(AndroidUtilities.dp(40))
+            actions_row.setScaleX(0.8)
+            actions_row.setScaleY(0.8)
+        except Exception:
+            pass
         
         def on_channel(v):
             try:
@@ -997,18 +1067,71 @@ class TemplatesPlugin(BasePlugin):
             except Exception:
                 pass
 
+        def on_open_doc(v):
+            try:
+                from org.telegram.messenger.browser import Browser
+                from android.net import Uri
+                if self.lang == 'ru':
+                    doc_url = 'https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES_RU.md'
+                else:
+                    doc_url = 'https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES_EN.md'
+                uri = Uri.parse(doc_url)
+                Browser.openUrl(act, uri, True, True, True, None, None, True, True, True)
+            except Exception:
+                pass
+
         channel_btn = create_link_button(t('channel', lang=self.lang), 'msg_channel', on_channel)
         personal_btn = create_link_button(t('personal', lang=self.lang), 'msg_contacts', on_personal)
         channel_btn.setMinimumWidth(AndroidUtilities.dp(100))
         personal_btn.setMinimumWidth(AndroidUtilities.dp(100))
+        open_btn = FrameLayout(act)
+        open_bg = GradientDrawable()
+        open_bg.setCornerRadius(AndroidUtilities.dp(18))
+        try:
+            bg_color = Theme.getColor(Theme.key_chat_inLoader) & 0x20FFFFFF | 0x10000000
+        except Exception:
+            bg_color = Color.parseColor("#F0F0F0")
+        open_bg.setColor(bg_color)
+        try:
+            from android.graphics.drawable import RippleDrawable
+            from android.content.res import ColorStateList
+            ripple_color = ColorStateList.valueOf(Color.parseColor("#40000000"))
+            ripple_drawable = RippleDrawable(ripple_color, open_bg, None)
+            open_btn.setBackground(ripple_drawable)
+        except Exception:
+            open_btn.setBackground(open_bg)
+        open_btn.setPadding(AndroidUtilities.dp(12), AndroidUtilities.dp(8), AndroidUtilities.dp(12), AndroidUtilities.dp(8))
+        from android.widget import ImageView
+        icon_view = ImageView(act)
+        try:
+            from org.telegram.messenger import R as R_tg
+            icon_view.setImageResource(getattr(R_tg.drawable, 'msg_openin', getattr(R_tg.drawable, 'msg_open', 0)))
+        except Exception:
+            pass
+        icon_view.setScaleType(ImageView.ScaleType.CENTER)
+        icon_view.setColorFilter(Theme.getColor(Theme.key_dialogTextBlue))
+        open_btn.addView(icon_view, LayoutHelper.createFrame(20, 20, Gravity.CENTER, 0, 0, 0, 0))
+        open_btn.setClickable(True)
+        open_btn.setFocusable(True)
+        self._apply_press_scale(open_btn)
+        open_btn.setOnClickListener(OnClickListener(lambda *_: on_open_doc(open_btn)))
         actions_row.addView(channel_btn, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL, 0, 0, 6, 0))
-        actions_row.addView(personal_btn, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL, 0, 0, 0, 0))
+        actions_row.addView(personal_btn, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL, 0, 0, 6, 0))
+        actions_row.addView(open_btn, LayoutHelper.createLinear(-2, -2, Gravity.CENTER_VERTICAL, 0, 0, 0, 0))
         root_layout.addView(actions_row, LayoutHelper.createLinear(-1, -2, 0, 0, 0, 12))
         close_btn_frame = FrameLayout(act)
+        try:
+            base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+        except Exception:
+            base_color = Theme.getColor(Theme.key_dialogTextBlue)
+        try:
+            pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+        except Exception:
+            pressed_color = base_color
         close_btn_frame.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-            AndroidUtilities.dp(10),
-            Theme.getColor(Theme.key_featuredStickers_addButton),
-            Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            AndroidUtilities.dp(28),
+            base_color,
+            pressed_color
         ))
         close_btn_frame.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
         close_btn_frame.setClickable(True)
@@ -1021,10 +1144,544 @@ class TemplatesPlugin(BasePlugin):
         close_btn_text.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
         close_btn_frame.addView(close_btn_text, FrameLayout.LayoutParams(-1, -2))
         close_btn_frame.setOnClickListener(OnClickListener(lambda *_: sheet.dismiss()))
-        root_layout.addView(close_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 0, 0, 0))
+        self._apply_press_scale(close_btn_frame)
+        try:
+            close_btn_frame.setAlpha(0.0)
+            close_btn_frame.setTranslationY(AndroidUtilities.dp(50))
+            close_btn_frame.setScaleX(0.8)
+            close_btn_frame.setScaleY(0.8)
+        except Exception:
+            pass
+        root_layout.addView(close_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 8, 0, 0))
         sheet.setCustomView(root_layout)
         sheet.setCanDismissWithSwipe(False)
         sheet.show()
+        def animate_elements():
+            try:
+                try:
+                    root_layout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                except Exception:
+                    pass
+                def scale_up_menu():
+                    try:
+                        root_layout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                    except Exception:
+                        pass
+                    def show_elements():
+                        try:
+                            title_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                        except Exception:
+                            pass
+                        try:
+                            body_scroll.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                        except Exception:
+                            pass
+                        try:
+                            actions_row.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                        except Exception:
+                            pass
+                        try:
+                            close_btn_frame.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(150).start()
+                        except Exception:
+                            pass
+                    try:
+                        run_on_ui_thread(show_elements)
+                    except Exception:
+                        pass
+                try:
+                    from org.telegram.messenger import AndroidUtilities
+                    from java import dynamic_proxy
+                    from java.lang import Runnable
+                    class ScaleUpRunnable(dynamic_proxy(Runnable)):
+                        def __init__(self, func):
+                            super().__init__()
+                            self.func = func
+                        def run(self):
+                            self.func()
+                    AndroidUtilities.runOnUIThread(ScaleUpRunnable(lambda: run_on_ui_thread(scale_up_menu)), 200)
+                except Exception:
+                    try:
+                        run_on_ui_thread(scale_up_menu)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            run_on_ui_thread(animate_elements)
+        except Exception:
+            pass
+
+    def _check_for_updates_on_load(self):
+        def delayed_check():
+            time.sleep(5)
+            self._check_for_updates(show_on_load=True)
+        thread = threading.Thread(target=delayed_check)
+        thread.daemon = True
+        thread.start()
+    
+    def _check_for_updates(self, show_on_load=False, show_loading=True):
+        if self.checking_update:
+            return
+        self.update_available = False
+        self.checking_update = True
+        timeout_reached = [False]
+        
+        def check_thread():
+            try:
+                if show_loading and not show_on_load:
+                    run_on_ui_thread(lambda: self._show_checking_bulletin())
+                api_url = "https://api.github.com/repos/mr-Vestr/plugins/contents/Templates/config.json?ref=main"
+                timestamp = int(time.time() * 1000)
+                api_url_with_timestamp = f"{api_url}&t={timestamp}"
+                request = urllib.request.Request(api_url_with_timestamp)
+                request.add_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                request.add_header('Pragma', 'no-cache')
+                request.add_header('Expires', '0')
+                request.add_header('Accept', 'application/vnd.github.v3+json')
+                if show_loading and not show_on_load:
+                    check_started = time.time()
+                    def check_timeout():
+                        time.sleep(10)
+                        if self.checking_update and not timeout_reached[0]:
+                            timeout_reached[0] = True
+                            self.checking_update = False
+                            run_on_ui_thread(lambda: self._show_timeout_bulletin())
+                    timeout_thread = threading.Thread(target=check_timeout, daemon=True)
+                    timeout_thread.start()
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    if timeout_reached[0]:
+                        return
+                    if response.getcode() != 200:
+                        raise Exception(f"HTTP {response.getcode()}")
+                    api_response = json.loads(response.read().decode('utf-8'))
+                    if api_response.get("encoding") != "base64":
+                        raise Exception("Unexpected encoding format")
+                    content_base64 = api_response.get("content", "")
+                    if not content_base64:
+                        raise Exception("No content in API response")
+                    content_base64 = content_base64.replace('\n', '').replace('\r', '')
+                    content_decoded = base64.b64decode(content_base64).decode('utf-8')
+                    config_data = json.loads(content_decoded)
+                    if timeout_reached[0]:
+                        return
+                    latest_version_from_config = config_data.get("version", "0.0.0")
+                    if self.lang == 'ru':
+                        changelog_from_config = config_data.get("changelog_ru", config_data.get("changelog", "Нет информации об изменениях"))
+                    else:
+                        changelog_from_config = config_data.get("changelog_en", config_data.get("changelog", "No changelog available"))
+                    sticker_info = config_data.get("sticker", "")
+                    download_url_from_config = config_data.get("link", "")
+                    sticker_pack_from_config = None
+                    sticker_index_from_config = 0
+                    if sticker_info and "/" in sticker_info:
+                        parts = sticker_info.split("/")
+                        sticker_pack_from_config = parts[0]
+                        try:
+                            sticker_index_from_config = int(parts[1]) if len(parts) > 1 else 0
+                        except:
+                            sticker_index_from_config = 0
+                    else:
+                        sticker_pack_from_config = "mr_vestr"
+                        sticker_index_from_config = 1
+                    current_version = __version__.strip()
+                    latest_version_clean = latest_version_from_config.strip()
+                    current_base = current_version.split(" (")[0].strip() if " (" in current_version else current_version.strip()
+                    latest_base = latest_version_clean.split(" (")[0].strip() if " (" in latest_version_clean else latest_version_clean.strip()
+                    if current_base != latest_base:
+                        self.update_available = True
+                        self.latest_version = latest_version_from_config
+                        self.changelog = changelog_from_config
+                        self.download_url = download_url_from_config
+                        self.sticker_pack = sticker_pack_from_config
+                        self.sticker_index = sticker_index_from_config
+                        if show_on_load and not timeout_reached[0]:
+                            run_on_ui_thread(lambda: self._show_update_bottom_sheet())
+                        elif show_loading and not timeout_reached[0]:
+                            run_on_ui_thread(lambda: self._show_update_bottom_sheet())
+                    else:
+                        self.update_available = False
+                        self.latest_version = latest_version_from_config
+                        self.changelog = changelog_from_config
+                        self.download_url = download_url_from_config
+                        self.sticker_pack = sticker_pack_from_config
+                        self.sticker_index = sticker_index_from_config
+                        if show_loading and not show_on_load and not timeout_reached[0]:
+                            run_on_ui_thread(lambda: self._show_no_update_bulletin())
+            except Exception as e:
+                if show_loading and not timeout_reached[0]:
+                    error_message = str(e)
+                    run_on_ui_thread(lambda: self._show_error_bulletin(error_message))
+            finally:
+                if not timeout_reached[0]:
+                    self.checking_update = False
+        threading.Thread(target=check_thread, daemon=True).start()
+    
+    def _show_checking_bulletin(self):
+        try:
+            from org.telegram.messenger import R as R_tg
+            BulletinHelper.show_with_button(
+                t('checking_updates', lang=self.lang) if hasattr(self, 'lang') and self.lang == 'ru' else "Checking updates...",
+                R_tg.raw.camera_flip,
+                t('close', lang=self.lang) if hasattr(self, 'lang') and self.lang == 'ru' else "Close",
+                lambda: None,
+                None
+            )
+        except Exception as e:
+            pass
+    
+    def _show_no_update_bulletin(self):
+        try:
+            from org.telegram.messenger import R as R_tg
+            BulletinHelper.show_with_button(
+                t('no_updates_available', lang=self.lang) if hasattr(self, 'lang') and self.lang == 'ru' else "You have the latest version of the plugin.",
+                R_tg.raw.done,
+                t('close', lang=self.lang) if hasattr(self, 'lang') and self.lang == 'ru' else "Close",
+                lambda: None,
+                None
+            )
+        except Exception as e:
+            pass
+    
+    def _show_error_bulletin(self, error_msg):
+        try:
+            from org.telegram.messenger import R as R_tg
+            BulletinHelper.show_with_button(
+                t('update_check_error', lang=self.lang, error=error_msg) if hasattr(self, 'lang') and self.lang == 'ru' else f"Update check error: {error_msg}",
+                R_tg.raw.error,
+                t('close', lang=self.lang) if hasattr(self, 'lang') and self.lang == 'ru' else "Close",
+                lambda: None,
+                None
+            )
+        except Exception as e:
+            pass
+    
+    def _show_timeout_bulletin(self):
+        try:
+            from org.telegram.messenger import R as R_tg
+            BulletinHelper.show_with_button(
+                "Не удалось проверить обновления. Проверьте подключение к интернету." if self.lang == 'ru' else "Failed to check for updates. Check your internet connection.",
+                R_tg.raw.error,
+                t('close', lang=self.lang) if hasattr(self, 'lang') and self.lang == 'ru' else "Close",
+                lambda: None,
+                None
+            )
+        except Exception as e:
+            pass
+    
+    def _show_update_bottom_sheet(self):
+        try:
+            from client_utils import get_last_fragment
+            from org.telegram.ui.ActionBar import BottomSheet, Theme
+            from org.telegram.ui.Components import LayoutHelper, BackupImageView
+            from org.telegram.messenger import AndroidUtilities, MediaDataController, ImageLocation
+            from android.widget import LinearLayout, TextView, ScrollView, FrameLayout
+            from android.view import Gravity, View
+            from android.util import TypedValue
+            from android.graphics import Color
+            from android.text import SpannableString, SpannableStringBuilder
+            from android.text.style import StrikethroughSpan, ForegroundColorSpan
+            from android_utils import OnClickListener, run_on_ui_thread
+            from org.telegram.messenger.browser import Browser
+            from android.net import Uri
+            fragment = get_last_fragment()
+            if not fragment:
+                return
+            act = fragment.getParentActivity()
+            if not act:
+                return
+            sheet = BottomSheet(act, False, fragment.getResourceProvider())
+            sheet.setApplyBottomPadding(False)
+            sheet.setApplyTopPadding(False)
+            root_layout = LinearLayout(act)
+            root_layout.setOrientation(LinearLayout.VERTICAL)
+            root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
+            try:
+                root_layout.setAlpha(0.0)
+                root_layout.setScaleX(0.3)
+                root_layout.setScaleY(0.3)
+                root_layout.setTranslationY(AndroidUtilities.dp(100))
+            except Exception:
+                pass
+            try:
+                from android.graphics.drawable import GradientDrawable
+                bg_drawable = GradientDrawable()
+                bg_drawable.setShape(GradientDrawable.RECTANGLE)
+                bg_drawable.setCornerRadii([AndroidUtilities.dp(20), AndroidUtilities.dp(20), AndroidUtilities.dp(20), AndroidUtilities.dp(20), 0, 0, 0, 0])
+                bg_drawable.setColor(Theme.getColor(Theme.key_dialogBackground))
+                root_layout.setBackground(bg_drawable)
+            except Exception:
+                try:
+                    root_layout.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground))
+                except Exception:
+                    pass
+            avatar_view = BackupImageView(act)
+            avatar_view.setRoundRadius(AndroidUtilities.dp(45))
+            root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
+            try:
+                current_account = fragment.getCurrentAccount()
+            except Exception:
+                current_account = 0
+            try:
+                media_controller = MediaDataController.getInstance(current_account)
+                if media_controller and self.sticker_pack:
+                    sticker_set = media_controller.getStickerSetByName(self.sticker_pack)
+                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > self.sticker_index:
+                        sticker_document = sticker_set.documents.get(self.sticker_index)
+                        image_location = ImageLocation.getForDocument(sticker_document)
+                        avatar_view.setImage(image_location, "130_130", None, 0, sticker_document)
+                    else:
+                        from org.telegram.tgnet import TLRPC
+                        input_set = TLRPC.TL_inputStickerSetShortName()
+                        input_set.short_name = self.sticker_pack
+                        media_controller.getStickerSet(input_set, None, False, None)
+            except Exception:
+                pass
+            title_view = TextView(act)
+            title_view.setTypeface(AndroidUtilities.bold())
+            title_view.setGravity(Gravity.CENTER)
+            title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24)
+            title_view.setText("Templates | Шаблоны")
+            try:
+                title_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+            except Exception:
+                pass
+            try:
+                title_view.setAlpha(0.0)
+                title_view.setTranslationY(AndroidUtilities.dp(50))
+                title_view.setScaleX(0.8)
+                title_view.setScaleY(0.8)
+            except Exception:
+                pass
+            root_layout.addView(title_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 8))
+            version_view = TextView(act)
+            version_view.setGravity(Gravity.CENTER)
+            version_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
+            version_view.setTextColor(Theme.getColor(Theme.key_dialogTextGray))
+            current_version_clean = __version__.split(" (")[0].strip()
+            version_text = f"{current_version_clean} → {self.latest_version}"
+            spannable = SpannableString(version_text)
+            spannable.setSpan(StrikethroughSpan(), 0, len(current_version_clean), SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE)
+            version_view.setText(spannable)
+            root_layout.addView(version_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 16))
+            changes_title = TextView(act)
+            changes_title.setTypeface(AndroidUtilities.bold())
+            changes_title.setGravity(Gravity.LEFT)
+            changes_title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18)
+            changes_title.setText("Изменения:" if self.lang == 'ru' else "Changes:")
+            changes_title.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+            root_layout.addView(changes_title, LayoutHelper.createLinear(-1, -2, Gravity.LEFT, 0, 0, 0, 8))
+            changelog_container = FrameLayout(act)
+            try:
+                from android.graphics.drawable import GradientDrawable
+                border_drawable = GradientDrawable()
+                border_drawable.setShape(GradientDrawable.RECTANGLE)
+                border_drawable.setCornerRadius(AndroidUtilities.dp(8))
+                border_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+                border_drawable.setStroke(AndroidUtilities.dp(2), border_color)
+                border_drawable.setColor(Theme.getColor(Theme.key_dialogBackground))
+                changelog_container.setBackground(border_drawable)
+            except Exception:
+                pass
+            changelog_container.setPadding(AndroidUtilities.dp(12), AndroidUtilities.dp(12), AndroidUtilities.dp(12), AndroidUtilities.dp(12))
+            changelog_view = TextView(act)
+            changelog_view.setGravity(Gravity.LEFT)
+            changelog_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15)
+            changelog_view.setText(self.changelog or "No changelog available")
+            changelog_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+            changelog_view.setLineSpacing(AndroidUtilities.dp(4), 1.15)
+            changelog_container.addView(changelog_view, FrameLayout.LayoutParams(-1, -2))
+            root_layout.addView(changelog_container, LayoutHelper.createLinear(-1, -2, Gravity.LEFT, 0, 0, 0, 12))
+            changelog_link_btn = TextView(act)
+            changelog_link_btn.setText("Полный список изменений" if self.lang == 'ru' else "Full changelog")
+            changelog_link_btn.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            changelog_link_btn.setGravity(Gravity.CENTER)
+            try:
+                changelog_link_btn.setTextColor(Theme.getColor(Theme.key_featuredStickers_addButton))
+            except Exception:
+                changelog_link_btn.setTextColor(Color.BLUE)
+            changelog_link_btn.setClickable(True)
+            changelog_link_btn.setFocusable(True)
+            def on_changelog_link_click(v):
+                try:
+                    sheet.dismiss()
+                    Browser.openUrl(act, Uri.parse("https://t.me/I_am_Vestr"))
+                except Exception:
+                    pass
+            changelog_link_btn.setOnClickListener(OnClickListener(lambda *_: on_changelog_link_click(changelog_link_btn)))
+            self._apply_press_scale(changelog_link_btn)
+            try:
+                changelog_link_btn.setAlpha(0.0)
+                changelog_link_btn.setTranslationY(AndroidUtilities.dp(50))
+                changelog_link_btn.setScaleX(0.8)
+                changelog_link_btn.setScaleY(0.8)
+            except Exception:
+                pass
+            root_layout.addView(changelog_link_btn, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 16))
+            update_btn_frame = FrameLayout(act)
+            base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+            pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            update_btn_frame.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                AndroidUtilities.dp(28),
+                base_color,
+                pressed_color
+            ))
+            update_btn_frame.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
+            update_btn_frame.setClickable(True)
+            update_btn_frame.setFocusable(True)
+            update_btn_text = TextView(act)
+            update_btn_text.setText("Обновить" if self.lang == 'ru' else "Update")
+            update_btn_text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
+            update_btn_text.setTypeface(AndroidUtilities.bold())
+            update_btn_text.setGravity(Gravity.CENTER)
+            update_btn_text.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
+            update_btn_frame.addView(update_btn_text, FrameLayout.LayoutParams(-1, -2))
+            def on_update_click(v):
+                try:
+                    sheet.dismiss()
+                    self._download_and_install_update()
+                except Exception:
+                    pass
+            update_btn_frame.setOnClickListener(OnClickListener(lambda *_: on_update_click(update_btn_frame)))
+            self._apply_press_scale(update_btn_frame)
+            try:
+                update_btn_frame.setAlpha(0.0)
+                update_btn_frame.setTranslationY(AndroidUtilities.dp(50))
+                update_btn_frame.setScaleX(0.8)
+                update_btn_frame.setScaleY(0.8)
+            except Exception:
+                pass
+            root_layout.addView(update_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 8, 0, 0))
+            sheet.setCustomView(root_layout)
+            sheet.show()
+            def animate_elements():
+                try:
+                    try:
+                        root_layout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                    except Exception:
+                        pass
+                    def scale_up_menu():
+                        try:
+                            root_layout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                        except Exception:
+                            pass
+                        def show_elements():
+                            try:
+                                title_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                            except Exception:
+                                pass
+                            try:
+                                changelog_container.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                            except Exception:
+                                pass
+                            try:
+                                changelog_link_btn.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(75).start()
+                            except Exception:
+                                pass
+                            try:
+                                update_btn_frame.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                            except Exception:
+                                pass
+                        try:
+                            run_on_ui_thread(show_elements)
+                        except Exception:
+                            pass
+                    try:
+                        from org.telegram.messenger import AndroidUtilities
+                        from java import dynamic_proxy
+                        from java.lang import Runnable
+                        class ScaleUpRunnable(dynamic_proxy(Runnable)):
+                            def __init__(self, func):
+                                super().__init__()
+                                self.func = func
+                            def run(self):
+                                self.func()
+                        AndroidUtilities.runOnUIThread(ScaleUpRunnable(lambda: run_on_ui_thread(scale_up_menu)), 200)
+                    except Exception:
+                        try:
+                            run_on_ui_thread(scale_up_menu)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            try:
+                run_on_ui_thread(animate_elements)
+            except Exception:
+                pass
+        except Exception as e:
+            pass
+    
+    def _download_and_install_update(self):
+        try:
+            from org.telegram.messenger import R as R_tg
+            from ui.bulletin import BulletinHelper
+            from com.exteragram.messenger.plugins import PluginsController, PluginsConstants
+            from org.telegram.messenger import ApplicationLoader, Utilities
+            from java import dynamic_proxy, jclass
+            loading_bulletin = [None]
+            def show_loading():
+                loading_bulletin[0] = BulletinHelper.show_with_button(
+                    "Обновление плагина Templates..." if self.lang == 'ru' else "Updating Templates plugin...",
+                    R_tg.raw.download_progress,
+                    "Закрыть" if self.lang == 'ru' else "Close",
+                    lambda: None,
+                    None
+                )
+            run_on_ui_thread(show_loading)
+            callback_shown = [False]
+            def download_thread():
+                try:
+                    if not self.download_url:
+                        raise Exception("Download URL not available")
+                    with urllib.request.urlopen(self.download_url, timeout=30) as response:
+                        plugin_content = response.read()
+                    plugins_dir = os.path.join(str(ApplicationLoader.applicationContext.getFilesDir()), "plugins")
+                    temp_file = os.path.join(plugins_dir, "templates_update.tmp")
+                    with open(temp_file, 'wb') as f:
+                        f.write(plugin_content)
+                    version = self.latest_version
+                    class Callback(dynamic_proxy(Utilities.Callback)):
+                        def run(self_cb, error):
+                            if callback_shown[0]:
+                                return
+                            callback_shown[0] = True
+                            try:
+                                os.remove(temp_file)
+                            except:
+                                pass
+                            if error:
+                                run_on_ui_thread(lambda: BulletinHelper.show_with_button(
+                                    "Плагин Templates не удалось обновить." if self.lang == 'ru' else "Failed to update Templates plugin.",
+                                    R_tg.raw.error,
+                                    "Закрыть" if self.lang == 'ru' else "Close",
+                                    lambda: None,
+                                    None
+                                ))
+                            else:
+                                run_on_ui_thread(lambda: BulletinHelper.show_with_button(
+                                    "Плагин Templates успешно обновлён!" if self.lang == 'ru' else "Templates plugin updated successfully!",
+                                    R_tg.raw.done,
+                                    "Закрыть" if self.lang == 'ru' else "Close",
+                                    lambda: None,
+                                    None
+                                ))
+                    class Runnable(dynamic_proxy(jclass("java.lang.Runnable"))):
+                        def run(self_r):
+                            PluginsController.engines.get(PluginsConstants.PYTHON).loadPluginFromFile(temp_file, None, Callback())
+                    Utilities.pluginsQueue.postRunnable(Runnable())
+                except Exception as e:
+                    if not callback_shown[0]:
+                        callback_shown[0] = True
+                        run_on_ui_thread(lambda: BulletinHelper.show_with_button(
+                            "Плагин Templates не удалось обновить." if self.lang == 'ru' else "Failed to update Templates plugin.",
+                            R_tg.raw.error,
+                            "Закрыть" if self.lang == 'ru' else "Close",
+                            lambda: None,
+                            None
+                        ))
+            threading.Thread(target=download_thread, daemon=True).start()
+            threading.Thread(target=download_thread, daemon=True).start()
+        except Exception as e:
+            pass
 
     def _show_version_dialog(self, _):
         self._force_load_stickers()
@@ -1047,7 +1704,14 @@ class TemplatesPlugin(BasePlugin):
         sheet = BottomSheet(act, False)
         root_layout = LinearLayout(act)
         root_layout.setOrientation(LinearLayout.VERTICAL)
-        root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(20))
+        root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
+        try:
+            root_layout.setAlpha(0.0)
+            root_layout.setScaleX(0.3)
+            root_layout.setScaleY(0.3)
+            root_layout.setTranslationY(AndroidUtilities.dp(100))
+        except Exception:
+            pass
         try:
             root_layout.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground))
         except Exception:
@@ -1097,12 +1761,26 @@ class TemplatesPlugin(BasePlugin):
             title_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
         except Exception:
             pass
+        try:
+            title_view.setAlpha(0.0)
+            title_view.setTranslationY(AndroidUtilities.dp(50))
+            title_view.setScaleX(0.8)
+            title_view.setScaleY(0.8)
+        except Exception:
+            pass
         root_layout.addView(title_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 12))
         body_scroll = ScrollView(act)
         body_scroll.setVerticalScrollBarEnabled(False)
         body_scroll.setPadding(AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4), 0)
         try:
             body_scroll.setNestedScrollingEnabled(True)
+        except Exception:
+            pass
+        try:
+            body_scroll.setAlpha(0.0)
+            body_scroll.setTranslationY(AndroidUtilities.dp(30))
+            body_scroll.setScaleX(0.8)
+            body_scroll.setScaleY(0.8)
         except Exception:
             pass
         body_tv = TextView(act)
@@ -1128,10 +1806,18 @@ class TemplatesPlugin(BasePlugin):
         divider.setBackgroundColor(divider_color)
         root_layout.addView(divider, LayoutHelper.createLinear(-1, 1, 0, 16, 0, 12))
         check_btn_frame = FrameLayout(act)
+        try:
+            base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+        except Exception:
+            base_color = Theme.getColor(Theme.key_dialogTextBlue)
+        try:
+            pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+        except Exception:
+            pressed_color = base_color
         check_btn_frame.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-            AndroidUtilities.dp(10),
-            Theme.getColor(Theme.key_featuredStickers_addButton),
-            Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            AndroidUtilities.dp(28),
+            base_color,
+            pressed_color
         ))
         check_btn_frame.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
         check_btn_frame.setClickable(True)
@@ -1147,15 +1833,72 @@ class TemplatesPlugin(BasePlugin):
         def on_check(v):
             try:
                 sheet.dismiss()
-                uri = Uri.parse("https://t.me/I_am_Vestr")
-                Browser.openUrl(act, uri, True, True, True, None, None, False, False, False)
+                self._check_for_updates(show_loading=True)
             except Exception:
                 pass
         
         check_btn_frame.setOnClickListener(OnClickListener(lambda *_: on_check(check_btn_frame)))
-        root_layout.addView(check_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 0, 0, 0))
+        self._apply_press_scale(check_btn_frame)
+        try:
+            check_btn_frame.setAlpha(0.0)
+            check_btn_frame.setTranslationY(AndroidUtilities.dp(50))
+            check_btn_frame.setScaleX(0.8)
+            check_btn_frame.setScaleY(0.8)
+        except Exception:
+            pass
+        root_layout.addView(check_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 8, 0, 0))
         sheet.setCustomView(root_layout)
         sheet.show()
+        def animate_elements():
+            try:
+                try:
+                    root_layout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                except Exception:
+                    pass
+                def scale_up_menu():
+                    try:
+                        root_layout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                    except Exception:
+                        pass
+                    def show_elements():
+                        try:
+                            title_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                        except Exception:
+                            pass
+                        try:
+                            body_scroll.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                        except Exception:
+                            pass
+                        try:
+                            check_btn_frame.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                        except Exception:
+                            pass
+                    try:
+                        run_on_ui_thread(show_elements)
+                    except Exception:
+                        pass
+                try:
+                    from org.telegram.messenger import AndroidUtilities
+                    from java import dynamic_proxy
+                    from java.lang import Runnable
+                    class ScaleUpRunnable(dynamic_proxy(Runnable)):
+                        def __init__(self, func):
+                            super().__init__()
+                            self.func = func
+                        def run(self):
+                            self.func()
+                    AndroidUtilities.runOnUIThread(ScaleUpRunnable(lambda: run_on_ui_thread(scale_up_menu)), 200)
+                except Exception:
+                    try:
+                        run_on_ui_thread(scale_up_menu)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            run_on_ui_thread(animate_elements)
+        except Exception:
+            pass
 
     def _show_reset_templates_dialog(self, _):
         pass
@@ -1940,7 +2683,14 @@ class TemplatesPlugin(BasePlugin):
         sheet = BottomSheet(act, False)
         root_layout = LinearLayout(act)
         root_layout.setOrientation(LinearLayout.VERTICAL)
-        root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(20))
+        root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
+        try:
+            root_layout.setAlpha(0.0)
+            root_layout.setScaleX(0.3)
+            root_layout.setScaleY(0.3)
+            root_layout.setTranslationY(AndroidUtilities.dp(100))
+        except Exception:
+            pass
         try:
             root_layout.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground))
         except Exception:
@@ -1991,12 +2741,26 @@ class TemplatesPlugin(BasePlugin):
             title_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
         except Exception:
             pass
+        try:
+            title_view.setAlpha(0.0)
+            title_view.setTranslationY(AndroidUtilities.dp(50))
+            title_view.setScaleX(0.8)
+            title_view.setScaleY(0.8)
+        except Exception:
+            pass
         root_layout.addView(title_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 12))
         body_scroll = ScrollView(act)
         body_scroll.setVerticalScrollBarEnabled(False)
         body_scroll.setPadding(AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4), 0)
         try:
             body_scroll.setNestedScrollingEnabled(True)
+        except Exception:
+            pass
+        try:
+            body_scroll.setAlpha(0.0)
+            body_scroll.setTranslationY(AndroidUtilities.dp(30))
+            body_scroll.setScaleX(0.8)
+            body_scroll.setScaleY(0.8)
         except Exception:
             pass
         body_tv = TextView(act)
@@ -2022,14 +2786,29 @@ class TemplatesPlugin(BasePlugin):
         divider.setBackgroundColor(divider_color)
         root_layout.addView(divider, LayoutHelper.createLinear(-1, 1, 0, 16, 0, 12))
         support_btn_frame = FrameLayout(act)
+        try:
+            base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+        except Exception:
+            base_color = Theme.getColor(Theme.key_dialogTextBlue)
+        try:
+            pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+        except Exception:
+            pressed_color = base_color
         support_btn_frame.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-            AndroidUtilities.dp(10),
-            Theme.getColor(Theme.key_featuredStickers_addButton),
-            Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            AndroidUtilities.dp(28),
+            base_color,
+            pressed_color
         ))
         support_btn_frame.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
         support_btn_frame.setClickable(True)
         support_btn_frame.setFocusable(True)
+        try:
+            support_btn_frame.setAlpha(0.0)
+            support_btn_frame.setTranslationY(AndroidUtilities.dp(50))
+            support_btn_frame.setScaleX(0.8)
+            support_btn_frame.setScaleY(0.8)
+        except Exception:
+            pass
         support_btn_text = TextView(act)
         support_btn_text.setText(t('support_me', lang=self.lang))
         support_btn_text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
@@ -2065,9 +2844,60 @@ class TemplatesPlugin(BasePlugin):
             except Exception:
                 pass
         support_btn_frame.setOnClickListener(OnClickListener(lambda *_: on_support(support_btn_frame)))
-        root_layout.addView(support_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 0, 0, 0))
+        self._apply_press_scale(support_btn_frame)
+        root_layout.addView(support_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 8, 0, 0))
         sheet.setCustomView(root_layout)
-        sheet.show() 
+        sheet.show()
+        def animate_elements():
+            try:
+                try:
+                    root_layout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                except Exception:
+                    pass
+                def scale_up_menu():
+                    try:
+                        root_layout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                    except Exception:
+                        pass
+                    def show_elements():
+                        try:
+                            title_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                        except Exception:
+                            pass
+                        try:
+                            body_scroll.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                        except Exception:
+                            pass
+                        try:
+                            support_btn_frame.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                        except Exception:
+                            pass
+                    try:
+                        run_on_ui_thread(show_elements)
+                    except Exception:
+                        pass
+                try:
+                    from org.telegram.messenger import AndroidUtilities
+                    from java import dynamic_proxy
+                    from java.lang import Runnable
+                    class ScaleUpRunnable(dynamic_proxy(Runnable)):
+                        def __init__(self, func):
+                            super().__init__()
+                            self.func = func
+                        def run(self):
+                            self.func()
+                    AndroidUtilities.runOnUIThread(ScaleUpRunnable(lambda: run_on_ui_thread(scale_up_menu)), 200)
+                except Exception:
+                    try:
+                        run_on_ui_thread(scale_up_menu)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            run_on_ui_thread(animate_elements)
+        except Exception:
+            pass 
 
     def _show_template_popup_menu(self, input_field):
         from org.telegram.ui.ActionBar import BottomSheet
@@ -2103,6 +2933,13 @@ class TemplatesPlugin(BasePlugin):
         linearLayout = LinearLayout(act)
         builder.setCustomView(linearLayout)
         linearLayout.setOrientation(LinearLayout.VERTICAL)
+        try:
+            linearLayout.setAlpha(0.0)
+            linearLayout.setScaleX(0.3)
+            linearLayout.setScaleY(0.3)
+            linearLayout.setTranslationY(AndroidUtilities.dp(100))
+        except Exception:
+            pass
         titleTextView = TextView(act)
         titleTextView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
         titleTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24)
@@ -2112,8 +2949,22 @@ class TemplatesPlugin(BasePlugin):
             titleTextView.setText(t('select_template', lang=self.lang))
         else:
             titleTextView.setText(t('no_templates_available', lang=self.lang))
+        try:
+            titleTextView.setAlpha(0.0)
+            titleTextView.setTranslationY(AndroidUtilities.dp(50))
+            titleTextView.setScaleX(0.8)
+            titleTextView.setScaleY(0.8)
+        except Exception:
+            pass
         linearLayout.addView(titleTextView, LayoutHelper.createFrame(-1, -2, Gravity.TOP, 0, 16, 0, 8))
         contentFrame = FrameLayout(act)
+        try:
+            contentFrame.setAlpha(0.0)
+            contentFrame.setTranslationY(AndroidUtilities.dp(30))
+            contentFrame.setScaleX(0.8)
+            contentFrame.setScaleY(0.8)
+        except Exception:
+            pass
         linearLayout.addView(contentFrame, LayoutHelper.createLinear(-1, 0, 1.0))
         if active_templates:
             scrollView = ScrollView(act)
@@ -2124,6 +2975,13 @@ class TemplatesPlugin(BasePlugin):
                 pass
             buttonsLayout = LinearLayout(act)
             buttonsLayout.setOrientation(LinearLayout.VERTICAL)
+            try:
+                buttonsLayout.setAlpha(0.0)
+                buttonsLayout.setTranslationY(AndroidUtilities.dp(40))
+                buttonsLayout.setScaleX(0.8)
+                buttonsLayout.setScaleY(0.8)
+            except Exception:
+                pass
             def create_template_button(template):
                 def send_template(v=None):
                     try:
@@ -2191,11 +3049,26 @@ class TemplatesPlugin(BasePlugin):
         settingsBtnContainer = LinearLayout(act)
         settingsBtnContainer.setOrientation(LinearLayout.HORIZONTAL)
         settingsBtnContainer.setGravity(Gravity.CENTER_HORIZONTAL)
+        try:
+            settingsBtnContainer.setAlpha(0.0)
+            settingsBtnContainer.setTranslationY(AndroidUtilities.dp(60))
+            settingsBtnContainer.setScaleX(0.8)
+            settingsBtnContainer.setScaleY(0.8)
+        except Exception:
+            pass
         settingsBtn = FrameLayout(act)
+        try:
+            base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+        except Exception:
+            base_color = Theme.getColor(Theme.key_dialogTextBlue)
+        try:
+            pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+        except Exception:
+            pressed_color = base_color
         settingsBtn.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-            AndroidUtilities.dp(10),
-            Theme.getColor(Theme.key_featuredStickers_addButton),
-            Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            AndroidUtilities.dp(28),
+            base_color,
+            pressed_color
         ))
         settingsBtn.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
         settingsBtn.setClickable(True)
@@ -2212,6 +3085,7 @@ class TemplatesPlugin(BasePlugin):
             self.menu_shown = False
             self.open_plugin_settings()
         settingsBtn.setOnClickListener(OnClickListener(on_settings))
+        self._apply_press_scale(settingsBtn)
         settingsBtnContainer.addView(settingsBtn, LayoutHelper.createLinear(-1, -2, Gravity.CENTER_HORIZONTAL, 24, 0, 24, 0))
         linearLayout.addView(settingsBtnContainer, LayoutHelper.createLinear(-1, -2, 0, 8, 0, 16))
         sheet = builder.show()
@@ -2222,6 +3096,73 @@ class TemplatesPlugin(BasePlugin):
             sheet.setOnDismissListener(dynamic_proxy(android.content.DialogInterface.OnDismissListener)(on_dismiss))
         except Exception:
             pass
+        def animate_elements():
+            try:
+                try:
+                    linearLayout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                except Exception:
+                    pass
+                def scale_up_menu():
+                    try:
+                        linearLayout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                    except Exception:
+                        pass
+                    def show_elements():
+                        try:
+                            titleTextView.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                        except Exception:
+                            pass
+                        try:
+                            contentFrame.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                        except Exception:
+                            pass
+                        try:
+                            if active_templates:
+                                buttonsLayout.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                        except Exception:
+                            pass
+                        try:
+                            settingsBtnContainer.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(150).start()
+                        except Exception:
+                            pass
+                    try:
+                        run_on_ui_thread(show_elements)
+                    except Exception:
+                        pass
+                try:
+                    from org.telegram.messenger import AndroidUtilities
+                    from java import dynamic_proxy
+                    from java.lang import Runnable
+                    class ScaleUpRunnable(dynamic_proxy(Runnable)):
+                        def __init__(self, func):
+                            super().__init__()
+                            self.func = func
+                        def run(self):
+                            self.func()
+                    AndroidUtilities.runOnUIThread(ScaleUpRunnable(lambda: run_on_ui_thread(scale_up_menu)), 200)
+                except Exception:
+                    try:
+                        run_on_ui_thread(scale_up_menu)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            from org.telegram.messenger import AndroidUtilities
+            from java import dynamic_proxy
+            from java.lang import Runnable
+            class AnimationRunnable(dynamic_proxy(Runnable)):
+                def __init__(self, func):
+                    super().__init__()
+                    self.func = func
+                def run(self):
+                    self.func()
+            AndroidUtilities.runOnUIThread(AnimationRunnable(lambda: run_on_ui_thread(animate_elements)), 0)
+        except Exception:
+            try:
+                run_on_ui_thread(animate_elements)
+            except Exception:
+                pass
         return sheet
 
     def _show_export_bottom_sheet(self):
@@ -2266,7 +3207,14 @@ class TemplatesPlugin(BasePlugin):
             sheet = BottomSheet(act, False)
             root_layout = LinearLayout(act)
             root_layout.setOrientation(LinearLayout.VERTICAL)
-            root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(20))
+            root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
+            try:
+                root_layout.setAlpha(0.0)
+                root_layout.setScaleX(0.3)
+                root_layout.setScaleY(0.3)
+                root_layout.setTranslationY(AndroidUtilities.dp(100))
+            except Exception:
+                pass
             try:
                 root_layout.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground))
             except Exception:
@@ -2318,6 +3266,13 @@ class TemplatesPlugin(BasePlugin):
                 title_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
             except Exception:
                 title_view.setTextColor(Color.BLACK)
+            try:
+                title_view.setAlpha(0.0)
+                title_view.setTranslationY(AndroidUtilities.dp(50))
+                title_view.setScaleX(0.8)
+                title_view.setScaleY(0.8)
+            except Exception:
+                pass
             root_layout.addView(title_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 12))
             desc_view = TextView(act)
             desc_view.setText(t('export_question', lang=self.lang))
@@ -2327,6 +3282,13 @@ class TemplatesPlugin(BasePlugin):
                 desc_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
             except Exception:
                 desc_view.setTextColor(Color.BLACK)
+            try:
+                desc_view.setAlpha(0.0)
+                desc_view.setTranslationY(AndroidUtilities.dp(30))
+                desc_view.setScaleX(0.8)
+                desc_view.setScaleY(0.8)
+            except Exception:
+                pass
             root_layout.addView(desc_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 16))
             selected_text = TextView(act)
             selected_text.setText(f"{t('selected_templates', lang=self.lang)} ({max_templates})")
@@ -2337,6 +3299,13 @@ class TemplatesPlugin(BasePlugin):
             except Exception:
                 selected_text.setTextColor(Color.BLUE)
             selected_text.setClickable(True)
+            try:
+                selected_text.setAlpha(0.0)
+                selected_text.setTranslationY(AndroidUtilities.dp(30))
+                selected_text.setScaleX(0.8)
+                selected_text.setScaleY(0.8)
+            except Exception:
+                pass
             def show_export_selector(v):
                 self._show_export_selector(templates[:max_templates], selected_indices, lambda indices: 
                     run_on_ui_thread(lambda: selected_text.setText(f"{t('selected_templates', lang=self.lang)} ({len(indices)})")))
@@ -2350,19 +3319,35 @@ class TemplatesPlugin(BasePlugin):
             root_layout.addView(divider, LayoutHelper.createLinear(-1, 1, Gravity.FILL_HORIZONTAL, 0, 8, 0, 8))
             export_button = TextView(act)
             export_button.setText(t('export', lang=self.lang))
-            export_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            export_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
             export_button.setTypeface(AndroidUtilities.bold())
             export_button.setGravity(Gravity.CENTER)
             try:
+                base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+            except Exception:
+                base_color = Theme.getColor(Theme.key_dialogTextBlue)
+            try:
+                pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            except Exception:
+                pressed_color = base_color
+            try:
                 export_button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-                    AndroidUtilities.dp(8), 
-                    Theme.getColor(Theme.key_featuredStickers_addButton), 
-                    Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+                    AndroidUtilities.dp(28), 
+                    base_color, 
+                    pressed_color
                 ))
                 export_button.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
             except Exception:
                 export_button.setBackgroundColor(Color.BLUE)
                 export_button.setTextColor(Color.WHITE)
+            export_button.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
+            try:
+                export_button.setAlpha(0.0)
+                export_button.setTranslationY(AndroidUtilities.dp(40))
+                export_button.setScaleX(0.8)
+                export_button.setScaleY(0.8)
+            except Exception:
+                pass
             def export_templates(v):
                 try:
                     sheet.dismiss()
@@ -2413,9 +3398,64 @@ class TemplatesPlugin(BasePlugin):
                     error_msg = str(export_error)
                     run_on_ui_thread(lambda: BulletinHelper.show_error(t('export_error', lang=self.lang, error=error_msg)))
             export_button.setOnClickListener(OnClickListener(export_templates))
-            root_layout.addView(export_button, LayoutHelper.createLinear(-1, 48, Gravity.START, 0, 0, 0, 0))
+            self._apply_press_scale(export_button)
+            root_layout.addView(export_button, LayoutHelper.createLinear(-1, -2, Gravity.START, 0, 8, 0, 0))
             sheet.setCustomView(root_layout)
             sheet.show()
+            def animate_elements():
+                try:
+                    try:
+                        root_layout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                    except Exception:
+                        pass
+                    def scale_up_menu():
+                        try:
+                            root_layout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                        except Exception:
+                            pass
+                        def show_elements():
+                            try:
+                                title_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                            except Exception:
+                                pass
+                            try:
+                                desc_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                            except Exception:
+                                pass
+                            try:
+                                selected_text.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                            except Exception:
+                                pass
+                            try:
+                                export_button.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(150).start()
+                            except Exception:
+                                pass
+                        try:
+                            run_on_ui_thread(show_elements)
+                        except Exception:
+                            pass
+                    try:
+                        from org.telegram.messenger import AndroidUtilities
+                        from java import dynamic_proxy
+                        from java.lang import Runnable
+                        class ScaleUpRunnable(dynamic_proxy(Runnable)):
+                            def __init__(self, func):
+                                super().__init__()
+                                self.func = func
+                            def run(self):
+                                self.func()
+                        AndroidUtilities.runOnUIThread(ScaleUpRunnable(lambda: run_on_ui_thread(scale_up_menu)), 200)
+                    except Exception:
+                        try:
+                            run_on_ui_thread(scale_up_menu)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            try:
+                run_on_ui_thread(animate_elements)
+            except Exception:
+                pass
         except Exception as e:
             self._export_templates_via_dialogs(selected_indices)
 
@@ -2446,6 +3486,13 @@ class TemplatesPlugin(BasePlugin):
             scroll_content = LinearLayout(context)
             scroll_content.setOrientation(LinearLayout.VERTICAL)
             scroll_content.setClickable(True)
+            try:
+                scroll_content.setAlpha(0.0)
+                scroll_content.setTranslationY(AndroidUtilities.dp(30))
+                scroll_content.setScaleX(0.8)
+                scroll_content.setScaleY(0.8)
+            except Exception:
+                pass
             content_frame = FrameLayout(context)
             content_frame.addView(scroll_content)
             scroll_view = NestedScrollView(context)
@@ -2457,6 +3504,13 @@ class TemplatesPlugin(BasePlugin):
             title_text_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
             title_text_view.setText(t('select_templates', lang=self.lang))
             title_text_view.setGravity(Gravity.CENTER)
+            try:
+                title_text_view.setAlpha(0.0)
+                title_text_view.setTranslationY(AndroidUtilities.dp(50))
+                title_text_view.setScaleX(0.8)
+                title_text_view.setScaleY(0.8)
+            except Exception:
+                pass
             scroll_content.addView(title_text_view, LayoutHelper.createLinear(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 10, 20, 10, 16))
             selected_items = set(selected_indices)
             checkboxes = {}
@@ -2510,18 +3564,27 @@ class TemplatesPlugin(BasePlugin):
                 item_container.setOnClickListener(ItemClickImpl(i))
                 scroll_content.addView(item_container, LayoutHelper.createLinear(-1, 56, Gravity.TOP, 0, 0, 0, 0))
             action_button = TextView(context)
+            try:
+                base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+            except Exception:
+                base_color = Theme.getColor(Theme.key_dialogTextBlue)
+            try:
+                pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            except Exception:
+                pressed_color = base_color
             action_button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-                AndroidUtilities.dp(8), 
-                Theme.getColor(Theme.key_featuredStickers_addButton), 
-                Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+                AndroidUtilities.dp(28), 
+                base_color, 
+                pressed_color
             ))
             action_button.setGravity(Gravity.CENTER)
             action_button.setSingleLine(True)
             action_button.setText(t('select', lang=self.lang))
             action_button.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
-            action_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            action_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
             action_button.setTypeface(AndroidUtilities.bold())
             action_button.setEnabled(True)
+            action_button.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
             class ActionClickImpl(OnClick):
                 def onClick(self, v):
                     selected_indices[:] = list(selected_items)
@@ -2529,9 +3592,37 @@ class TemplatesPlugin(BasePlugin):
                         on_selection_complete(selected_indices)
                     run_on_ui_thread(lambda: bottom_sheet.dismiss())
             action_button.setOnClickListener(ActionClickImpl())
-            scroll_content.addView(action_button, LayoutHelper.createLinear(-1, 48, Gravity.START, 14, 0, 14, 20))
+            self._apply_press_scale(action_button)
+            try:
+                action_button.setAlpha(0.0)
+                action_button.setTranslationY(AndroidUtilities.dp(40))
+                action_button.setScaleX(0.8)
+                action_button.setScaleY(0.8)
+            except Exception:
+                pass
+            scroll_content.addView(action_button, LayoutHelper.createLinear(-1, -2, Gravity.START, 14, 8, 14, 20))
             bottom_sheet.setCanDismissWithSwipe(False)
             bottom_sheet.show()
+            def animate_elements():
+                try:
+                    try:
+                        title_text_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                    except Exception:
+                        pass
+                    try:
+                        scroll_content.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                    except Exception:
+                        pass
+                    try:
+                        action_button.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            try:
+                run_on_ui_thread(animate_elements)
+            except Exception:
+                pass
         except Exception as e:
             pass
 
@@ -2624,7 +3715,14 @@ class TemplatesPlugin(BasePlugin):
             sheet = BottomSheet(act, False)
             root_layout = LinearLayout(act)
             root_layout.setOrientation(LinearLayout.VERTICAL)
-            root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(20))
+            root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
+            try:
+                root_layout.setAlpha(0.0)
+                root_layout.setScaleX(0.3)
+                root_layout.setScaleY(0.3)
+                root_layout.setTranslationY(AndroidUtilities.dp(100))
+            except Exception:
+                pass
             try:
                 root_layout.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground))
             except Exception:
@@ -2674,6 +3772,13 @@ class TemplatesPlugin(BasePlugin):
                 title_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
             except Exception:
                 pass
+            try:
+                title_view.setAlpha(0.0)
+                title_view.setTranslationY(AndroidUtilities.dp(50))
+                title_view.setScaleX(0.8)
+                title_view.setScaleY(0.8)
+            except Exception:
+                pass
             root_layout.addView(title_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 12))
             desc_view = TextView(act)
             desc_view.setText(t('import_question', lang=self.lang))
@@ -2683,12 +3788,30 @@ class TemplatesPlugin(BasePlugin):
                 desc_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
             except Exception:
                 pass
+            try:
+                desc_view.setAlpha(0.0)
+                desc_view.setTranslationY(AndroidUtilities.dp(30))
+                desc_view.setScaleX(0.8)
+                desc_view.setScaleY(0.8)
+            except Exception:
+                pass
             root_layout.addView(desc_view, LayoutHelper.createLinear(-1, -2, Gravity.CENTER, 0, 0, 0, 16))
             selected_text = TextView(act)
             selected_text.setText(f"{t('selected_templates', lang=self.lang)} ({max_templates})")
             selected_text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
             selected_text.setGravity(Gravity.CENTER)
             try:
+                selected_text.setTextColor(Theme.getColor(Theme.key_featuredStickers_addButton))
+            except Exception:
+                selected_text.setTextColor(Color.BLUE)
+            selected_text.setClickable(True)
+            try:
+                selected_text.setAlpha(0.0)
+                selected_text.setTranslationY(AndroidUtilities.dp(30))
+                selected_text.setScaleX(0.8)
+                selected_text.setScaleY(0.8)
+            except Exception:
+                pass
                 selected_text.setTextColor(Theme.getColor(Theme.key_featuredStickers_addButton))
             except Exception:
                 selected_text.setTextColor(Color.BLUE)
@@ -2741,6 +3864,7 @@ class TemplatesPlugin(BasePlugin):
                 current_state = clear_checkbox.isChecked()
                 clear_checkbox.setChecked(not current_state, True)
             clear_container.setOnClickListener(OnClickListener(toggle_clear_all))
+            self._apply_press_scale(clear_container)
             root_layout.addView(clear_container, LayoutHelper.createLinear(-2, -2, Gravity.CENTER, 0, 0, 0, 16))
             divider = View(act)
             try:
@@ -2750,19 +3874,35 @@ class TemplatesPlugin(BasePlugin):
             root_layout.addView(divider, LayoutHelper.createLinear(-1, 1, Gravity.FILL_HORIZONTAL, 0, 8, 0, 8))
             import_button = TextView(act)
             import_button.setText(t('import', lang=self.lang))
-            import_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            import_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
             import_button.setTypeface(AndroidUtilities.bold())
             import_button.setGravity(Gravity.CENTER)
             try:
+                base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+            except Exception:
+                base_color = Theme.getColor(Theme.key_dialogTextBlue)
+            try:
+                pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            except Exception:
+                pressed_color = base_color
+            try:
                 import_button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-                    AndroidUtilities.dp(8), 
-                    Theme.getColor(Theme.key_featuredStickers_addButton), 
-                    Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+                    AndroidUtilities.dp(28), 
+                    base_color, 
+                    pressed_color
                 ))
                 import_button.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
             except Exception:
                 import_button.setBackgroundColor(Color.BLUE)
                 import_button.setTextColor(Color.WHITE)
+            import_button.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
+            try:
+                import_button.setAlpha(0.0)
+                import_button.setTranslationY(AndroidUtilities.dp(40))
+                import_button.setScaleX(0.8)
+                import_button.setScaleY(0.8)
+            except Exception:
+                pass
             def do_import(v):
                 try:
                     selected_templates = [templates[i] for i in selected_indices if i < len(templates)]
@@ -2844,9 +3984,64 @@ class TemplatesPlugin(BasePlugin):
                     from ui.bulletin import BulletinHelper
                     run_on_ui_thread(lambda: BulletinHelper.show_error(t('import_error', lang=self.lang, error=str(e))))
             import_button.setOnClickListener(OnClickListener(do_import))
-            root_layout.addView(import_button, LayoutHelper.createLinear(-1, 48, Gravity.START, 0, 0, 0, 0))
+            self._apply_press_scale(import_button)
+            root_layout.addView(import_button, LayoutHelper.createLinear(-1, -2, Gravity.START, 0, 8, 0, 0))
             sheet.setCustomView(root_layout)
             sheet.show()
+            def animate_elements():
+                try:
+                    try:
+                        root_layout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                    except Exception:
+                        pass
+                    def scale_up_menu():
+                        try:
+                            root_layout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                        except Exception:
+                            pass
+                        def show_elements():
+                            try:
+                                title_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                            except Exception:
+                                pass
+                            try:
+                                desc_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                            except Exception:
+                                pass
+                            try:
+                                selected_text.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                            except Exception:
+                                pass
+                            try:
+                                import_button.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(150).start()
+                            except Exception:
+                                pass
+                        try:
+                            run_on_ui_thread(show_elements)
+                        except Exception:
+                            pass
+                    try:
+                        from org.telegram.messenger import AndroidUtilities
+                        from java import dynamic_proxy
+                        from java.lang import Runnable
+                        class ScaleUpRunnable(dynamic_proxy(Runnable)):
+                            def __init__(self, func):
+                                super().__init__()
+                                self.func = func
+                            def run(self):
+                                self.func()
+                        AndroidUtilities.runOnUIThread(ScaleUpRunnable(lambda: run_on_ui_thread(scale_up_menu)), 200)
+                    except Exception:
+                        try:
+                            run_on_ui_thread(scale_up_menu)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            try:
+                run_on_ui_thread(animate_elements)
+            except Exception:
+                pass
         except Exception as e:
             self._show_import_templates_alert(data, act)
 
@@ -2877,6 +4072,13 @@ class TemplatesPlugin(BasePlugin):
             scroll_content = LinearLayout(context)
             scroll_content.setOrientation(LinearLayout.VERTICAL)
             scroll_content.setClickable(True)
+            try:
+                scroll_content.setAlpha(0.0)
+                scroll_content.setTranslationY(AndroidUtilities.dp(30))
+                scroll_content.setScaleX(0.8)
+                scroll_content.setScaleY(0.8)
+            except Exception:
+                pass
             content_frame = FrameLayout(context)
             content_frame.addView(scroll_content)
             scroll_view = NestedScrollView(context)
@@ -2888,6 +4090,13 @@ class TemplatesPlugin(BasePlugin):
             title_text_view.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
             title_text_view.setText(t('select_templates', lang=self.lang))
             title_text_view.setGravity(Gravity.CENTER)
+            try:
+                title_text_view.setAlpha(0.0)
+                title_text_view.setTranslationY(AndroidUtilities.dp(50))
+                title_text_view.setScaleX(0.8)
+                title_text_view.setScaleY(0.8)
+            except Exception:
+                pass
             scroll_content.addView(title_text_view, LayoutHelper.createLinear(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 10, 20, 10, 16))
             selected_items = set(selected_indices)
             checkboxes = {}
@@ -2942,18 +4151,27 @@ class TemplatesPlugin(BasePlugin):
                 item_container.setOnClickListener(ItemClickImpl(i))
                 scroll_content.addView(item_container, LayoutHelper.createLinear(-1, 56, Gravity.TOP, 0, 0, 0, 0))
             action_button = TextView(context)
+            try:
+                base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+            except Exception:
+                base_color = Theme.getColor(Theme.key_dialogTextBlue)
+            try:
+                pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            except Exception:
+                pressed_color = base_color
             action_button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-                AndroidUtilities.dp(8), 
-                Theme.getColor(Theme.key_featuredStickers_addButton), 
-                Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+                AndroidUtilities.dp(28), 
+                base_color, 
+                pressed_color
             ))
             action_button.setGravity(Gravity.CENTER)
             action_button.setSingleLine(True)
             action_button.setText(t('select', lang=self.lang))
             action_button.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
-            action_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            action_button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
             action_button.setTypeface(AndroidUtilities.bold())
             action_button.setEnabled(True)
+            action_button.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
             class ActionClickImpl(OnClick):
                 def onClick(self, v):
                     selected_indices[:] = list(selected_items)
@@ -2962,9 +4180,37 @@ class TemplatesPlugin(BasePlugin):
                     run_on_ui_thread(lambda: bottom_sheet.dismiss())
             
             action_button.setOnClickListener(ActionClickImpl())
-            scroll_content.addView(action_button, LayoutHelper.createLinear(-1, 48, Gravity.START, 14, 0, 14, 20))
+            self._apply_press_scale(action_button)
+            try:
+                action_button.setAlpha(0.0)
+                action_button.setTranslationY(AndroidUtilities.dp(40))
+                action_button.setScaleX(0.8)
+                action_button.setScaleY(0.8)
+            except Exception:
+                pass
+            scroll_content.addView(action_button, LayoutHelper.createLinear(-1, -2, Gravity.START, 14, 8, 14, 20))
             bottom_sheet.setCanDismissWithSwipe(False)
             bottom_sheet.show()
+            def animate_elements():
+                try:
+                    try:
+                        title_text_view.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).start()
+                    except Exception:
+                        pass
+                    try:
+                        scroll_content.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(50).start()
+                    except Exception:
+                        pass
+                    try:
+                        action_button.animate().alpha(1.0).translationY(0).scaleX(1.0).scaleY(1.0).setDuration(350).setStartDelay(100).start()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            try:
+                run_on_ui_thread(animate_elements)
+            except Exception:
+                pass
         except Exception as e:
             pass
 
@@ -3252,10 +4498,18 @@ class TemplatesPlugin(BasePlugin):
         settingsBtnContainer.setOrientation(LinearLayout.HORIZONTAL)
         settingsBtnContainer.setGravity(Gravity.CENTER_HORIZONTAL)
         settingsBtn = FrameLayout(act)
+        try:
+            base_color = Theme.getColor(Theme.key_featuredStickers_addButton)
+        except Exception:
+            base_color = Theme.getColor(Theme.key_dialogTextBlue)
+        try:
+            pressed_color = Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+        except Exception:
+            pressed_color = base_color
         settingsBtn.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
-            AndroidUtilities.dp(10),
-            Theme.getColor(Theme.key_featuredStickers_addButton),
-            Theme.getColor(Theme.key_featuredStickers_addButtonPressed)
+            AndroidUtilities.dp(28),
+            base_color,
+            pressed_color
         ))
         settingsBtn.setPadding(0, AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14))
         settingsBtn.setClickable(True)
@@ -3272,6 +4526,7 @@ class TemplatesPlugin(BasePlugin):
             self.menu_shown = False
             self.open_plugin_settings()
         settingsBtn.setOnClickListener(OnClickListener(on_settings))
+        self._apply_press_scale(settingsBtn)
         settingsBtnContainer.addView(settingsBtn, LayoutHelper.createLinear(-1, -2, Gravity.CENTER_HORIZONTAL, 24, 0, 24, 0))
         linearLayout.addView(settingsBtnContainer, LayoutHelper.createLinear(-1, -2, 0, 8, 0, 16))
         sheet = builder.show()
