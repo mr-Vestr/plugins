@@ -30,25 +30,29 @@ Hi! If you want to borrow something from my plugin, please tag me @mr_Vestr.
 
 """
 
-from base_plugin import BasePlugin, MenuItemData, MenuItemType, HookResult, HookStrategy
+from base_plugin import BasePlugin, MenuItemData, MenuItemType, HookResult, HookStrategy, MethodHook
 from ui.settings import Divider, Header, Input, Switch, Text
 from android_utils import run_on_ui_thread
+from client_utils import get_last_fragment, run_on_queue, get_send_messages_helper
+from hook_utils import find_class, get_private_field, set_private_field
 import urllib.parse
 import urllib.request
-import locale
-import os
-import re
-import json
-import threading
-import time
-import base64
+import locale, os, re, json, threading, time, base64, weakref, copy, traceback
 from markdown_utils import parse_markdown
 from org.telegram.ui import DialogsActivity, LaunchActivity
 from android.os import Bundle
-from java import dynamic_proxy
+from java import dynamic_proxy, cast, jclass
+from java.util import ArrayList
+from java.lang import Integer
 from ui.bulletin import BulletinHelper
-from org.telegram.messenger import ApplicationLoader
+from org.telegram.messenger import ApplicationLoader, Utilities, AndroidUtilities, MediaDataController, ImageLocation, MessageObject
+from org.telegram.ui import ChatActivity
+from org.telegram.ui.ActionBar import BottomSheet, Theme, SimpleTextView
+from android.view import HapticFeedbackConstants, Gravity
+from org.telegram.ui.Components import BackupImageView, LayoutHelper
+from android.util import TypedValue
 from java.io import File
+from com.exteragram.messenger.plugins.models import HeaderSetting
 
 try:
     from android_utils import Callback
@@ -81,7 +85,7 @@ __description__ = """A plugin for creating, editing, and quickly sending message
 
 Плагин для создания, редактирования и быстрой отправки шаблонов сообщений."""
 __author__ = "@mr_Vestr"
-__version__ = "3.3"
+__version__ = "4.0"
 __min_version__ = "12.1.1"
 __icon__ = "mr_vestr/7"
 
@@ -142,10 +146,10 @@ LANG = {
         'channel_1': 'Мой канал — @I_am_Vestr',
         'personal_1': 'Моя личка — @mr_Vestr',
         'other': 'Другое',
-        'plugin_version': 'Версия плагина — 3.3',
+        'plugin_version': 'Версия плагина — 4.0',
         'updates': 'Обновления',
         'current_version': 'Текущая версия: {version}',
-        'updates_info': 'Новые версии будут в моём телеграм канале.',
+        'updates_info': 'Нажмите на кнопку ниже чтобы проверить обновления. Или проверьте мой канал @I_am_Vestr.',
         'check_updates': 'Проверить',
         'edit_template': 'Редактировать шаблон {n}',
         'save': 'Сохранить',
@@ -206,6 +210,8 @@ LANG = {
         'checking_updates': 'Проверка обновления Templates...',
         'no_updates_available': 'У вас последняя версия плагина.',
         'update_check_error': 'Ошибка проверки обновлений: {error}',
+        'template_name_exists': 'Такое имя шаблона уже есть. Переименуйте или он будет деактивирован.',
+        'refresh_templates': 'Обновление шаблонов...',
     },
     'en': {
         'name': 'Template name',
@@ -260,10 +266,10 @@ If you want to suggest an idea, report a bug, or anything else, write to the @I_
         'channel_1': 'My channel — @I_am_Vestr',
         'personal_1': 'My DM — @mr_Vestr',
         'other': 'Other',
-        'plugin_version': 'Plugin version — 3.3',
+        'plugin_version': 'Plugin version — 4.0',
         'updates': 'Updates',
         'current_version': 'Current version: {version}',
-        'updates_info': 'New versions are available in my Telegram channel.',
+        'updates_info': 'Click on the button below to check for updates. Or check out my channel @I_am_Vestr.',
         'check_updates': 'Check updates',
         'checking_updates': 'Checking updates for Templates...',
         'no_updates_available': 'You have the latest version of the plugin.',
@@ -324,6 +330,8 @@ If you want to suggest an idea, report a bug, or anything else, write to the @I_
         'error_prefix': 'Error:',
         'clear_all_templates': 'Clear all templates',
         'templates_limit_exceeded': 'The number of templates cannot exceed 30.',
+        'template_name_exists': 'Template name already exists. Rename it or it will be deactivated.',
+        'refresh_templates': 'Refresh templates...',
     }
 }
 
@@ -362,10 +370,18 @@ class _LocalFileSystem:
 class TemplatesPlugin(BasePlugin):
     def __init__(self):
         super().__init__()
+        self.hook_refs = []
         self.update_info_cache = None
         self.last_update_check = 0
         self.menu_shown = False
         self.templates_menu_id = 880032
+        self._templates_view_class_cache = {}
+        self.templates_view_hook_constructor_ref = None
+        self.templates_view_current_enter_view_ref = None
+        self.templates_view_settings_cache = None
+        self.templates_view_attached_views = set()
+        self.templates_view_custom_container = None
+        self.templates_view_current_settings = {}
         try:
             from org.telegram.messenger import LocaleController
             lang_code = LocaleController.getInstance().getCurrentLocale().getLanguage()
@@ -391,10 +407,41 @@ class TemplatesPlugin(BasePlugin):
                 tpl['text'] = ''
             self.templates.append(tpl)
 
+    def try_load_sticker(self, img, sticker_name, sticker_index=0, size="72_72"):
+        try:
+            if isinstance(sticker_name, str) and "/" in sticker_name:
+                icon_parts = sticker_name.split("/")
+                if len(icon_parts) == 2:
+                    sticker_set_name = icon_parts[0]
+                    sticker_index = int(icon_parts[1])
+            else:
+                sticker_set_name = sticker_name
+            ss = MediaDataController.getInstance(0).getStickerSetByName(sticker_set_name) or MediaDataController.getInstance(0).getStickerSetByEmojiOrName(sticker_set_name)
+            if ss and ss.documents and ss.documents.size() > sticker_index:
+                img.setImage(ImageLocation.getForDocument(ss.documents.get(sticker_index)), size, None, None, 0, 1)
+                return True
+        except:
+            pass
+        return False
+
+    def load_sticker_with_fallback(self, img, sticker_name, sticker_index=0, size="72_72", delay=1500):
+        if not self.try_load_sticker(img, sticker_name, sticker_index, size):
+            try:
+                if isinstance(sticker_name, str) and "/" in sticker_name:
+                    sticker_set_name = sticker_name.split("/")[0]
+                else:
+                    sticker_set_name = sticker_name
+                    
+                MediaDataController.getInstance(0).loadStickersByEmojiOrName(sticker_set_name, False, False)
+                run_on_ui_thread(lambda: self.try_load_sticker(img, sticker_name, sticker_index, size), delay)
+            except:
+                pass
+
     def on_plugin_load(self):
         self.update_info_cache = None
         self.last_update_check = 0
         self.update_available = False
+        self._check_for_updates_on_load_with_timeout()
         self.latest_version = None
         self.changelog = None
         self.download_url = None
@@ -413,6 +460,7 @@ class TemplatesPlugin(BasePlugin):
         if not hasattr(self, '_settings') or not self._settings:
             self.set_setting('show_chat_menu', self.get_setting('show_chat_menu', True), reload_settings=False)
             self.set_setting('show_chat_plugins_menu', self.get_setting('show_chat_plugins_menu', False), reload_settings=False)
+            self.set_setting('templates_visible', self.get_setting('templates_visible', True), reload_settings=False)
         self._update_drawer_menu()
         self._update_chat_menu()
         self._update_chat_plugins_menu()
@@ -431,7 +479,7 @@ class TemplatesPlugin(BasePlugin):
         self._add_document_hook()
         self._hook_chat_activity_resume()
         self._force_load_stickers()
-        self._check_for_updates_on_load()
+        self._setup_templates_view_search()
 
     def set_setting(self, key, value, reload_settings=False):
         try:
@@ -788,7 +836,7 @@ class TemplatesPlugin(BasePlugin):
                 if self.lang == 'en':
                     text = 'Hello%21+I%27m+writing+regarding+the+%22Templates%22+plugin%3A%0D%0A'
                 else:
-                    text = '%D0%9F%D1%80%D0%B8%D0%B2%D0%B5%D1%82%21+%D0%9F%D0%B8%D1%88%D1%83+%D0%BF%D0%BE+%D0%BF%D0%BE%D0%B2%D0%BE%D0%B4%D1%83+%D0%BF%D0%BB%D0%B0%D0%B3%D0%B8%D0%B0+%C2%ABTemplates%C2%BB%3A%0D%0A'
+                    text = '%D0%9F%D1%80%D0%B8%D0%B2%D0%B5%D1%82%21+%D0%9F%D0%B8%D1%88%D1%83+%D0%BF%D0%BE+%D0%BF%D0%BE%D0%B2%D0%BE%D0%B4%D1%83+%D0%BF%D0%BB%D0%B0%D0%B3%D0%B8%D0%BD%D0%B0+%C2%ABTemplates%C2%BB%3A%0D%0A'
                 uri = Uri.parse(f"https://t.me/mr_vestr/?text={text}")
                 Browser.openUrl(act, uri, True, True, True, None, None, False, False, False)
             except Exception as e:
@@ -1211,9 +1259,28 @@ class TemplatesPlugin(BasePlugin):
         except Exception:
             pass
 
+    def _check_for_updates_on_load_with_timeout(self):
+        try:
+            last_check_time = self.get_setting('last_update_check_time', 0)
+            current_time = int(time.time())
+            ten_minutes_ago = current_time - 600
+            
+            if last_check_time < ten_minutes_ago:
+                def delayed_check():
+                    time.sleep(3)
+                    self._check_for_updates(show_on_load=True)
+                    self.set_setting('last_update_check_time', current_time, reload_settings=False)
+                thread = threading.Thread(target=delayed_check)
+                thread.daemon = True
+                thread.start()
+            else:
+                pass
+        except Exception:
+            pass
+
     def _check_for_updates_on_load(self):
         def delayed_check():
-            time.sleep(5)
+            time.sleep(3)
             self._check_for_updates(show_on_load=True)
         thread = threading.Thread(target=delayed_check)
         thread.daemon = True
@@ -1308,12 +1375,15 @@ class TemplatesPlugin(BasePlugin):
                         if show_loading and not show_on_load and not timeout_reached[0]:
                             run_on_ui_thread(lambda: self._show_no_update_bulletin())
             except Exception as e:
-                if show_loading and not timeout_reached[0]:
+                if show_loading and not timeout_reached[0] and not show_on_load:
                     error_message = str(e)
                     run_on_ui_thread(lambda: self._show_error_bulletin(error_message))
             finally:
                 if not timeout_reached[0]:
                     self.checking_update = False
+                    if not show_on_load:
+                        current_time = int(time.time())
+                        self.set_setting('last_update_check_time', current_time, reload_settings=False)
         threading.Thread(target=check_thread, daemon=True).start()
     
     def _show_checking_bulletin(self):
@@ -1383,6 +1453,7 @@ class TemplatesPlugin(BasePlugin):
             from android_utils import OnClickListener, run_on_ui_thread
             from org.telegram.messenger.browser import Browser
             from android.net import Uri
+            from androidx.core.widget import NestedScrollView
             fragment = get_last_fragment()
             if not fragment:
                 return
@@ -1392,14 +1463,18 @@ class TemplatesPlugin(BasePlugin):
             sheet = BottomSheet(act, False, fragment.getResourceProvider())
             sheet.setApplyBottomPadding(False)
             sheet.setApplyTopPadding(False)
+            sheet.fixNavigationBar(Theme.getColor(Theme.key_windowBackgroundWhite))
+            scroll_view = NestedScrollView(act)
+            scroll_content = LinearLayout(act)
+            scroll_content.setOrientation(LinearLayout.VERTICAL)
+            scroll_content.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
             root_layout = LinearLayout(act)
             root_layout.setOrientation(LinearLayout.VERTICAL)
-            root_layout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(16), AndroidUtilities.dp(20), AndroidUtilities.dp(8))
             try:
-                root_layout.setAlpha(0.0)
-                root_layout.setScaleX(0.3)
-                root_layout.setScaleY(0.3)
-                root_layout.setTranslationY(AndroidUtilities.dp(100))
+                scroll_content.setAlpha(0.0)
+                scroll_content.setScaleX(0.3)
+                scroll_content.setScaleY(0.3)
+                scroll_content.setTranslationY(AndroidUtilities.dp(100))
             except Exception:
                 pass
             try:
@@ -1417,25 +1492,9 @@ class TemplatesPlugin(BasePlugin):
             avatar_view = BackupImageView(act)
             avatar_view.setRoundRadius(AndroidUtilities.dp(45))
             root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
-            try:
-                current_account = fragment.getCurrentAccount()
-            except Exception:
-                current_account = 0
-            try:
-                media_controller = MediaDataController.getInstance(current_account)
-                if media_controller and self.sticker_pack:
-                    sticker_set = media_controller.getStickerSetByName(self.sticker_pack)
-                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > self.sticker_index:
-                        sticker_document = sticker_set.documents.get(self.sticker_index)
-                        image_location = ImageLocation.getForDocument(sticker_document)
-                        avatar_view.setImage(image_location, "130_130", None, 0, sticker_document)
-                    else:
-                        from org.telegram.tgnet import TLRPC
-                        input_set = TLRPC.TL_inputStickerSetShortName()
-                        input_set.short_name = self.sticker_pack
-                        media_controller.getStickerSet(input_set, None, False, None)
-            except Exception:
-                pass
+            if self.sticker_pack:
+                sticker_name = f"{self.sticker_pack}/{self.sticker_index}" if self.sticker_index > 0 else self.sticker_pack
+                self.load_sticker_with_fallback(avatar_view, sticker_name, self.sticker_index, "130_130")
             title_view = TextView(act)
             title_view.setTypeface(AndroidUtilities.bold())
             title_view.setGravity(Gravity.CENTER)
@@ -1551,17 +1610,19 @@ class TemplatesPlugin(BasePlugin):
             except Exception:
                 pass
             root_layout.addView(update_btn_frame, LayoutHelper.createLinear(-1, -2, 0, 8, 0, 0))
-            sheet.setCustomView(root_layout)
+            scroll_content.addView(root_layout)
+            scroll_view.addView(scroll_content)
+            sheet.setCustomView(scroll_view)
             sheet.show()
             def animate_elements():
                 try:
                     try:
-                        root_layout.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
+                        scroll_content.animate().alpha(0.8).scaleX(0.4).scaleY(0.4).translationY(AndroidUtilities.dp(50)).setDuration(200).start()
                     except Exception:
                         pass
                     def scale_up_menu():
                         try:
-                            root_layout.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
+                            scroll_content.animate().alpha(1.0).scaleX(1.0).scaleY(1.0).translationY(0).setDuration(400).start()
                         except Exception:
                             pass
                         def show_elements():
@@ -1720,36 +1781,7 @@ class TemplatesPlugin(BasePlugin):
             avatar_view = BackupImageView(act)
             avatar_view.setRoundRadius(AndroidUtilities.dp(45))
             root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
-            try:
-                current_account = frag.getCurrentAccount()
-            except Exception:
-                current_account = 0
-            media_controller = MediaDataController.getInstance(current_account)
-            if media_controller:
-                sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 1:
-                    from org.telegram.tgnet import TLRPC
-                    input_set = TLRPC.TL_inputStickerSetShortName()
-                    input_set.short_name = "mr_vestr"
-                    media_controller.getStickerSet(input_set, None, False, None)
-                    def retry_load_sticker(attempt=0):
-                        try:
-                            if attempt < 5:
-                                sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 1:
-                                    sticker_document = sticker_set.documents.get(1)
-                                    image_location = ImageLocation.getForDocument(sticker_document)
-                                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-                                else:
-                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                        except Exception:
-                            if attempt < 5:
-                                AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
-                elif sticker_set.documents.size() > 1:
-                    sticker_document = sticker_set.documents.get(1)
-                    image_location = ImageLocation.getForDocument(sticker_document)
-                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+            self.load_sticker_with_fallback(avatar_view, "mr_vestr/1", 1, "90_90")
         except Exception:
             pass
         title_view = TextView(act)
@@ -1829,14 +1861,12 @@ class TemplatesPlugin(BasePlugin):
         check_btn_text.setGravity(Gravity.CENTER)
         check_btn_text.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText))
         check_btn_frame.addView(check_btn_text, FrameLayout.LayoutParams(-1, -2))
-        
         def on_check(v):
             try:
                 sheet.dismiss()
                 self._check_for_updates(show_loading=True)
             except Exception:
                 pass
-        
         check_btn_frame.setOnClickListener(OnClickListener(lambda *_: on_check(check_btn_frame)))
         self._apply_press_scale(check_btn_frame)
         try:
@@ -1963,45 +1993,54 @@ class TemplatesPlugin(BasePlugin):
             accent=False,
             on_click=lambda ctx: self._show_export_bottom_sheet()
         ))
+        if not self.get_setting('templates_visible', True):
+            settings.append(Divider())
+            settings.append(Text(
+                text=t('refresh_templates', lang=self.lang),
+                icon='msg_retry',
+                accent=True
+            ))
         settings.append(Divider())
         created_count = self._get_created_count()
-        for i in range(created_count):
-            tpl = self.templates[i] if i < len(self.templates) else {}
-            name = tpl.get("name", "")
-            text = tpl.get("text", "")
-            settings.append(Header(text=t('template_n', lang=self.lang, n=i+1)))
-            settings.append(Input(
-                key=f"template_name_{i}",
-                text=t('name', lang=self.lang),
-                default=name,
-                subtext=t('template_name_sub', lang=self.lang),
-                icon="msg_edit",
-                on_change=self._make_onchange(i, 'name'),
-                on_long_click=(lambda idx=i: (lambda v: self._on_input_long_click(idx, 'name', v)))()
-            ))
-            settings.append(Input(
-                key=f"template_text_{i}",
-                text=t('text', lang=self.lang),
-                default=text,
-                subtext=t('template_text_sub', lang=self.lang),
-                icon="msg_edit",
-                on_change=self._make_onchange(i, 'text'),
-                on_long_click=(lambda idx=i: (lambda v: self._on_input_long_click(idx, 'text', v)))()
-            ))
-            settings.append(Text(
-                text=t('send_template', lang=self.lang),
-                icon='msg_send',
-                accent=True,
-                on_click=lambda ctx, idx=i: self._send_template_by_index(idx)
-            ))
-            if created_count > 1:
-                settings.append(Text(
-                    text=t('delete_template', lang=self.lang),
-                    icon='msg_delete',
-                    red=True,
-                    on_click=(lambda idx=i: (lambda ctx: self._delete_template(idx)))()
+        show_templates = created_count > 0 and self.get_setting('templates_visible', True)
+        if show_templates:
+            for i in range(created_count):
+                tpl = self.templates[i] if i < len(self.templates) else {}
+                name = tpl.get("name", "")
+                text = tpl.get("text", "")
+                settings.append(Header(text=t('template_n', lang=self.lang, n=i+1)))
+                settings.append(Input(
+                    key=f"template_name_{i}",
+                    text=t('name', lang=self.lang),
+                    default=name,
+                    subtext=t('template_name_sub', lang=self.lang),
+                    icon="msg_edit",
+                    on_change=self._make_onchange(i, 'name'),
+                    on_long_click=(lambda idx=i: (lambda v: self._on_input_long_click(idx, 'name', v)))()
                 ))
-            settings.append(Divider())
+                settings.append(Input(
+                    key=f"template_text_{i}",
+                    text=t('text', lang=self.lang),
+                    default=text,
+                    subtext=t('template_text_sub', lang=self.lang),
+                    icon="msg_edit",
+                    on_change=self._make_onchange(i, 'text'),
+                    on_long_click=(lambda idx=i: (lambda v: self._on_input_long_click(idx, 'text', v)))()
+                ))
+                settings.append(Text(
+                    text=t('send_template', lang=self.lang),
+                    icon='msg_send',
+                    accent=True,
+                    on_click=lambda ctx, idx=i: self._send_template_by_index(idx)
+                ))
+                if created_count > 1:
+                    settings.append(Text(
+                        text=t('delete_template', lang=self.lang),
+                        icon='msg_delete',
+                        red=True,
+                        on_click=(lambda idx=i: (lambda ctx: self._delete_template(idx)))()
+                    ))
+                settings.append(Divider())
         settings.append(Header(text=t('contacts', lang=self.lang)))
         settings.append(Text(
             text=t('support_me', lang=self.lang),
@@ -2063,6 +2102,23 @@ class TemplatesPlugin(BasePlugin):
             tpl = self.templates[idx] if idx < len(self.templates) else {}
             tpl = tpl.copy()
             tpl[field] = val
+            if field == 'name' and val:
+                for i, other_tpl in enumerate(self.templates):
+                    if i != idx and other_tpl.get('name', '').strip() == val:
+                        from ui.bulletin import BulletinHelper
+                        from android_utils import run_on_ui_thread
+                        from org.telegram.messenger import R as R_tg
+                        run_on_ui_thread(lambda: BulletinHelper.show_with_button(
+                            t('template_name_exists', lang=self.lang),
+                            R_tg.raw.error,
+                            t('close', lang=self.lang),
+                            lambda: None,
+                            None
+                        ))
+                        tpl['enabled'] = False
+                        self.templates[idx] = tpl
+                        self.set_setting("templates", self.templates, reload_settings=True)
+                        return
             if field == 'name' or field == 'text':
                 tpl['enabled'] = bool(tpl.get('name', '') and tpl.get('text', ''))
             self.templates[idx] = tpl
@@ -2095,7 +2151,6 @@ class TemplatesPlugin(BasePlugin):
             popup_layout = ActionBarPopupWindow.ActionBarPopupWindowLayout(context)
             popup_layout.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground))
             popup_layout.setFitItems(True)
-            
             def create_menu_item(icon_res: int, title: str, on_click_action, is_clear=False):
                 from android.graphics.drawable import GradientDrawable
                 from android.graphics import Color, PorterDuff
@@ -2386,7 +2441,9 @@ class TemplatesPlugin(BasePlugin):
                         self.set_setting(f"template_name_{last_created}", "")
                         self.set_setting(f"template_text_{last_created}", "")
                         self.set_setting("templates_created_count", current_count - 1)
-                    self.set_setting("templates", self.templates, reload_settings=True)
+                    self.set_setting("templates", self.templates, reload_settings=False)
+                    self.set_setting('templates_visible', False, reload_settings=True)
+                    from android_utils import run_on_ui_thread
                     from ui.bulletin import BulletinHelper
                     deleted_number = idx + 1
                     def on_undo():
@@ -2397,7 +2454,8 @@ class TemplatesPlugin(BasePlugin):
                                 tpl = self.templates[i] if i < len(self.templates) else {}
                                 self.set_setting(f"template_name_{i}", tpl.get("name", ""))
                                 self.set_setting(f"template_text_{i}", tpl.get("text", ""))
-                            self.set_setting("templates", self.templates, reload_settings=True)
+                            self.set_setting("templates", self.templates, reload_settings=False)
+                            self.set_setting('templates_visible', True, reload_settings=True)
                         except Exception:
                             pass
                     try:
@@ -2406,10 +2464,22 @@ class TemplatesPlugin(BasePlugin):
                     except Exception:
                         icon_attr = None
                     try:
-                        BulletinHelper.show_with_button(t('template_deleted_n', lang=self.lang, n=deleted_number), icon_attr if icon_attr else 0, t('undo', lang=self.lang), lambda: on_undo(), None)
-                    except Exception:
-                        from android_utils import run_on_ui_thread
                         run_on_ui_thread(lambda: BulletinHelper.show_success(t('template_deleted_n', lang=self.lang, n=deleted_number)))
+                    except Exception:
+                        pass
+                    def restore_ui():
+                        try:
+                            self.set_setting('templates_visible', True, reload_settings=True)
+                            try:
+                                from client_utils import get_last_fragment
+                                frag = get_last_fragment()
+                                if frag:
+                                    frag.rebuildAllFragments(True)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                    run_on_ui_thread(lambda: run_on_ui_thread(restore_ui, 1000))
                 finally:
                     b.dismiss()
             builder.set_positive_button(t('delete_button', lang=self.lang), on_yes)
@@ -2422,6 +2492,16 @@ class TemplatesPlugin(BasePlugin):
         except Exception as e:
             from ui.bulletin import BulletinHelper
             BulletinHelper.show_error(t('error_occurred_with_reason', lang=self.lang, error=str(e)))
+
+    def _refresh_templates_ui(self):
+        try:
+            self.set_setting('templates_visible', True, reload_settings=True)
+            from ui.bulletin import BulletinHelper
+            from android_utils import run_on_ui_thread
+            run_on_ui_thread(lambda: BulletinHelper.show_success(t('templates_updated', lang=self.lang) if 'templates_updated' in LANG[self.lang] else "Templates updated"))
+        except Exception as e:
+            from ui.bulletin import BulletinHelper
+            BulletinHelper.show_error(f"Error: {str(e)}")
 
     def open_mr_vestr_link(self):
         from client_utils import get_last_fragment
@@ -2551,11 +2631,14 @@ class TemplatesPlugin(BasePlugin):
         if msg.lower().startswith(send_cmd.lower()):
             from ui.bulletin import BulletinHelper
             from android_utils import run_on_ui_thread
-            parts = msg[len(send_cmd):].strip()
-            if not parts:
+            msg_parts = msg.split(' ', 1)
+            if len(msg_parts) == 1:
                 run_on_ui_thread(lambda: self._show_template_popup_menu(None))
                 return HookResult(strategy=HookStrategy.CANCEL)
-            query = parts.lower()
+            query = msg_parts[1].strip().lower()
+            if not query:
+                run_on_ui_thread(lambda: self._show_template_popup_menu(None))
+                return HookResult(strategy=HookStrategy.CANCEL)
             for i, tpl in enumerate(self.templates):
                 if tpl.get('enabled', False):
                     name = self.get_setting(f"template_name_{i}", "").strip()
@@ -2699,37 +2782,7 @@ class TemplatesPlugin(BasePlugin):
             avatar_view = BackupImageView(act)
             avatar_view.setRoundRadius(AndroidUtilities.dp(45))
             root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
-            try:
-                current_account = frag.getCurrentAccount()
-            except Exception:
-                current_account = 0
-            media_controller = MediaDataController.getInstance(current_account)
-            if media_controller:
-                sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 9:
-                    from org.telegram.tgnet import TLRPC
-                    input_set = TLRPC.TL_inputStickerSetShortName()
-                    input_set.short_name = "mr_vestr"
-                    media_controller.getStickerSet(input_set, None, False, None)
-                    from org.telegram.messenger import AndroidUtilities
-                    def retry_load_sticker(attempt=0):
-                        try:
-                            if attempt < 5:
-                                sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                                if sticker_set and sticker_set.documents and sticker_set.documents.size() > 9:
-                                    sticker_document = sticker_set.documents.get(9)
-                                    image_location = ImageLocation.getForDocument(sticker_document)
-                                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-                                else:
-                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                        except Exception:
-                            if attempt < 5:
-                                AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
-                elif sticker_set.documents.size() > 9:
-                    sticker_document = sticker_set.documents.get(9)
-                    image_location = ImageLocation.getForDocument(sticker_document)
-                    avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+            self.load_sticker_with_fallback(avatar_view, "mr_vestr/9", 9, "90_90")
         except Exception:
             pass
         title_view = TextView(act)
@@ -3225,36 +3278,7 @@ class TemplatesPlugin(BasePlugin):
                 avatar_view = BackupImageView(act)
                 avatar_view.setRoundRadius(AndroidUtilities.dp(45))
                 root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
-                try:
-                    current_account = fragment.getCurrentAccount()
-                except Exception:
-                    current_account = 0
-                media_controller = MediaDataController.getInstance(current_account)
-                if media_controller:
-                    sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                    if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 11:
-                        from org.telegram.tgnet import TLRPC
-                        input_set = TLRPC.TL_inputStickerSetShortName()
-                        input_set.short_name = "mr_vestr"
-                        media_controller.getStickerSet(input_set, None, False, None)
-                        def retry_load_sticker(attempt=0):
-                            try:
-                                if attempt < 5:
-                                    sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > 11:
-                                        sticker_document = sticker_set.documents.get(11)
-                                        image_location = ImageLocation.getForDocument(sticker_document)
-                                        avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-                                    else:
-                                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                            except Exception:
-                                if attempt < 5:
-                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
-                    elif sticker_set.documents.size() > 11:
-                        sticker_document = sticker_set.documents.get(11)
-                        image_location = ImageLocation.getForDocument(sticker_document)
-                        avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                self.load_sticker_with_fallback(avatar_view, "mr_vestr/11", 11, "90_90")
             except Exception:
                 pass
             title_view = TextView(act)
@@ -3731,36 +3755,7 @@ class TemplatesPlugin(BasePlugin):
                 avatar_view = BackupImageView(act)
                 avatar_view.setRoundRadius(AndroidUtilities.dp(45))
                 root_layout.addView(avatar_view, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 12))
-                try:
-                    current_account = frag.getCurrentAccount()
-                except Exception:
-                    current_account = 0
-                media_controller = MediaDataController.getInstance(current_account)
-                if media_controller:
-                    sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                    if not sticker_set or not sticker_set.documents or sticker_set.documents.size() <= 10:
-                        from org.telegram.tgnet import TLRPC
-                        input_set = TLRPC.TL_inputStickerSetShortName()
-                        input_set.short_name = "mr_vestr"
-                        media_controller.getStickerSet(input_set, None, False, None)
-                        def retry_load_sticker(attempt=0):
-                            try:
-                                if attempt < 5:
-                                    sticker_set = media_controller.getStickerSetByName("mr_vestr")
-                                    if sticker_set and sticker_set.documents and sticker_set.documents.size() > 10:
-                                        sticker_document = sticker_set.documents.get(10)
-                                        image_location = ImageLocation.getForDocument(sticker_document)
-                                        avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
-                                    else:
-                                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                            except Exception:
-                                if attempt < 5:
-                                    AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(attempt + 1)), 300)
-                        AndroidUtilities.runOnUIThread(lambda: run_on_ui_thread(lambda: retry_load_sticker(0)), 500)
-                    elif sticker_set.documents.size() > 10:
-                        sticker_document = sticker_set.documents.get(10)
-                        image_location = ImageLocation.getForDocument(sticker_document)
-                        avatar_view.setImage(image_location, "90_90", None, 0, sticker_document)
+                self.load_sticker_with_fallback(avatar_view, "mr_vestr/10", 10, "90_90")
             except Exception:
                 pass
             title_view = TextView(act)
@@ -4138,7 +4133,6 @@ class TemplatesPlugin(BasePlugin):
                     def __init__(self, item_index):
                         super().__init__()
                         self.item_index = item_index
-                    
                     def onClick(self, v):
                         checkbox = checkboxes.get(self.item_index)
                         if checkbox:
@@ -4178,7 +4172,6 @@ class TemplatesPlugin(BasePlugin):
                     if on_selection_complete:
                         on_selection_complete(selected_indices)
                     run_on_ui_thread(lambda: bottom_sheet.dismiss())
-            
             action_button.setOnClickListener(ActionClickImpl())
             self._apply_press_scale(action_button)
             try:
@@ -4647,6 +4640,341 @@ class TemplateDialogsDelegate(dynamic_proxy(DialogsActivity.DialogsActivityDeleg
             from ui.bulletin import BulletinHelper
             BulletinHelper.show_error(f"{t('error_prefix', lang=self.lang)} {e}")
 
+class _LinkAliasEnterViewConstructorHook(MethodHook):
+    def __init__(self, plugin):
+        MethodHook.__init__(self)
+        self._plugin_ref = weakref.ref(plugin)
+
+    @property
+    def plugin(self):
+        return self._plugin_ref() if self._plugin_ref else None
+
+    def after_hooked_method(self, param):
+        try:
+            plugin = self.plugin
+            if not plugin:
+                return
+            enter_view = param.thisObject
+            def attach_watcher():
+                plugin._templates_view_attach_text_watcher(enter_view)
+            run_on_ui_thread(attach_watcher, delay=500)
+        except Exception as e:
+            pass
+
+def _setup_templates_view_search(self):
+    try:
+        self._templates_view_hook_enter_view_constructor()
+    except Exception as e:
+        pass
+
+def _templates_view_get_class(self, class_name):
+    if class_name not in self._templates_view_class_cache:
+        self._templates_view_class_cache[class_name] = find_class(class_name)
+    return self._templates_view_class_cache[class_name]
+
+def _templates_view_hook_enter_view_constructor(self):
+    try:
+        ChatActivityEnterView = self._templates_view_get_class("org.telegram.ui.Components.ChatActivityEnterView")
+        Activity = self._templates_view_get_class("android.app.Activity")
+        SizeNotifierFrameLayout = self._templates_view_get_class("org.telegram.ui.Components.SizeNotifierFrameLayout")
+        ChatActivity = self._templates_view_get_class("org.telegram.ui.ChatActivity")
+        ResourcesProvider = self._templates_view_get_class("org.telegram.ui.ActionBar.Theme$ResourcesProvider")
+        if not all([ChatActivityEnterView, Activity, SizeNotifierFrameLayout, ChatActivity]):
+            return
+        constructor = ChatActivityEnterView.getClass().getDeclaredConstructor(
+            Activity,
+            SizeNotifierFrameLayout,
+            ChatActivity,
+            jclass("java.lang.Boolean").TYPE,
+            ResourcesProvider
+        )
+        constructor.setAccessible(True)
+        self.templates_view_hook_constructor_ref = self.hook_method(constructor, _LinkAliasEnterViewConstructorHook(self))
+    except Exception as e:
+        pass
+
+def _templates_view_attach_text_watcher(self, enter_view):
+    try:
+        view_id = id(enter_view)
+        if view_id in self.templates_view_attached_views:
+            return
+        message_edit_text = get_private_field(enter_view, "messageEditText")
+        if not message_edit_text:
+            return
+        self.templates_view_current_enter_view_ref = weakref.ref(enter_view)
+        TextWatcherInterface = self._templates_view_get_class("android.text.TextWatcher")
+        plugin_ref = weakref.ref(self)
+        class CustomTextWatcher(dynamic_proxy(TextWatcherInterface)):
+            def beforeTextChanged(self, s, start, count, after):
+                pass
+            def onTextChanged(self, s, start, before, count):
+                pass
+            def afterTextChanged(self, editable):
+                plugin = plugin_ref()
+                if not plugin:
+                    return
+                try:
+                    text = str(editable.toString()) if editable else ""
+
+                    if text.startswith("/"):
+                        send_cmd = plugin.get_setting('send_cmd', '//').strip()
+                        if not send_cmd:
+                            send_cmd = '//'
+                        if text.startswith(send_cmd):
+                            cmd_len = len(send_cmd)
+                            if len(text) > cmd_len:
+                                search_key = text[cmd_len:].lower().strip()
+                                plugin._templates_view_show_matching_settings(search_key)
+                            else:
+                                plugin._templates_view_hide_popup()
+                        else:
+                            plugin._templates_view_hide_popup()
+                    else:
+                        plugin._templates_view_hide_popup()
+                except Exception as e:
+                    pass
+        watcher = CustomTextWatcher()
+        message_edit_text.addTextChangedListener(watcher)
+        self.templates_view_attached_views.add(view_id)
+    except Exception as e:
+        pass
+
+def _templates_view_collect_settings_with_alias(self):
+    settings_list = []
+    try:
+        for i, template in enumerate(self.templates):
+            if template.get('enabled', False) and template.get('name', '') and template.get('text', ''):
+                settings_list.append({
+                    'plugin_id': 'templates',
+                    'plugin_name': 'Templates',
+                    'setting_name': template['name'],
+                    'templates_view_alias': f'template_{i}',
+                    'search_key': template['name'].lower(),
+                    'template_index': i,
+                    'template_text': template['text']
+                })
+        return settings_list
+    except Exception as e:
+        pass
+    return settings_list
+
+def _templates_view_show_matching_settings(self, search_key):
+    try:
+        all_settings = self._templates_view_collect_settings_with_alias()
+        if not all_settings:
+            self._templates_view_hide_popup()
+            return
+        matching = []
+        for setting in all_settings:
+            if setting['setting_name'].lower().startswith(search_key):
+                matching.append(setting)
+        if not matching:
+            self._templates_view_hide_popup()
+            return
+        self._templates_view_show_bot_commands_popup(matching)
+        self._update_popup_size()
+    except Exception as e:
+        pass
+
+def _update_popup_size(self):
+    try:
+        if self.templates_view_custom_container:
+            run_on_ui_thread(lambda: self.templates_view_custom_container.requestLayout())
+    except:
+        pass
+
+def _templates_view_show_bot_commands_popup(self, settings):
+    try:
+        from org.telegram.ui.Components import RecyclerListView
+        enter_view = self.templates_view_current_enter_view_ref() if self.templates_view_current_enter_view_ref else None
+        if not enter_view:
+            fragment = get_last_fragment()
+            if fragment:
+                enter_view = get_private_field(fragment, "chatActivityEnterView")
+                if enter_view:
+                    self.templates_view_current_enter_view_ref = weakref.ref(enter_view)
+        if not enter_view:
+            return
+        bot_container = get_private_field(enter_view, "botCommandsMenuContainer")
+        bot_adapter = get_private_field(enter_view, "botCommandsAdapter")
+        if not bot_container:
+            try:
+                ChatActivityEnterView = self._templates_view_get_class("org.telegram.ui.Components.ChatActivityEnterView")
+                create_method = ChatActivityEnterView.getClass().getDeclaredMethod("createBotCommandsMenuContainer")
+                create_method.setAccessible(True)
+                create_method.invoke(enter_view)
+                bot_container = get_private_field(enter_view, "botCommandsMenuContainer")
+                bot_adapter = get_private_field(enter_view, "botCommandsAdapter")
+            except Exception as e:
+                pass
+        if not bot_container or not bot_adapter:
+            return
+        commands = []
+        descriptions = []
+        self.templates_view_current_settings = {}
+        for setting in settings[:10]:
+            cmd = setting['template_text'][:25] + "..." if len(setting['template_text']) > 25 else setting['template_text']
+            desc = setting['setting_name'][:15] + "..." if len(setting['setting_name']) > 15 else setting['setting_name']
+            commands.append(cmd)
+            descriptions.append(desc)
+            self.templates_view_current_settings[cmd] = setting
+        new_result_field = bot_adapter.getClass().getDeclaredField("newResult")
+        new_result_field.setAccessible(True)
+        new_result = new_result_field.get(bot_adapter)
+        new_result.clear()
+        for cmd in commands:
+            new_result.add(cmd)
+        new_result_help_field = bot_adapter.getClass().getDeclaredField("newResultHelp")
+        new_result_help_field.setAccessible(True)
+        new_result_help = new_result_help_field.get(bot_adapter)
+        new_result_help.clear()
+        for desc in descriptions:
+            new_result_help.add(desc)
+        bot_adapter.notifyDataSetChanged()
+        plugin_ref = weakref.ref(self)
+        class ClickListener(dynamic_proxy(RecyclerListView.OnItemClickListener)):
+            def onItemClick(self, view, position):
+                plugin = plugin_ref()
+                if not plugin:
+                    return
+                try:
+                    if hasattr(view, 'getCommand'):
+                        command = view.getCommand()
+                        setting = plugin.templates_view_current_settings.get(str(command))
+                        if setting:
+                            template_name = setting['setting_name']
+                            template_text = None
+                            template_index = None
+                            for i, template in enumerate(plugin.templates):
+                                if template.get('name', '') == template_name:
+                                    template_text = template.get('text', '')
+                                    template_index = i
+                                    break
+                            
+                            if template_text:
+                                enter_view_ref = plugin.templates_view_current_enter_view_ref
+                                ev = enter_view_ref() if enter_view_ref else None
+                                def ui_actions():
+                                    try:
+                                        if ev:
+                                            ev.setFieldText("")
+                                        bot_container.dismiss()
+                                    except Exception:
+                                        pass
+                                run_on_ui_thread(ui_actions)
+                                plugin._send_template_to_current_chat(template_index, template_name, template_text)
+                except Exception as e:
+                    pass
+        
+        class LongClickListener(dynamic_proxy(RecyclerListView.OnItemLongClickListener)):
+            def onItemClick(self, view, position):
+                plugin = plugin_ref()
+                if not plugin:
+                    return False
+                try:
+                    if hasattr(view, 'getCommand'):
+                        command = view.getCommand()
+                        setting = plugin.templates_view_current_settings.get(str(command))
+                        if setting:
+                            template_name = setting['setting_name']
+                            template_text = None
+                            for template in plugin.templates:
+                                if template.get('name', '') == template_name:
+                                    template_text = template.get('text', '')
+                                    break
+                            
+                            if template_text:
+                                enter_view_ref = plugin.templates_view_current_enter_view_ref
+                                ev = enter_view_ref() if enter_view_ref else None
+                                def ui_actions():
+                                    try:
+                                        if ev:
+                                            ev.setFieldText(template_text + " ")
+                                        bot_container.dismiss()
+                                    except Exception:
+                                        pass
+                                run_on_ui_thread(ui_actions)
+                                return True
+                except Exception as e:
+                    pass
+                return False
+        bot_container.listView.setOnItemClickListener(ClickListener())
+        bot_container.listView.setOnItemLongClickListener(LongClickListener())
+        try:
+            from android.widget import LinearLayout
+            from android.view import ViewGroup
+            from android.util import TypedValue
+            parent = bot_container.listView.getParent()
+            if parent and isinstance(parent, LinearLayout):
+                parent.setPadding(0, 4, 0, 0)
+            try:
+                enter_view_rect = android.graphics.Rect()
+                enter_view.getGlobalVisibleRect(enter_view_rect)
+                enter_view_width = enter_view_rect.width()
+                container_params = bot_container.getLayoutParams()
+                if container_params:
+                    container_params.width = enter_view_width
+                    bot_container.setLayoutParams(container_params)
+                    list_params = bot_container.listView.getLayoutParams()
+                    if list_params:
+                        list_params.width = enter_view_width
+                        bot_container.listView.setLayoutParams(list_params)
+            except:
+                pass
+            bot_container.requestLayout()
+        except:
+            pass
+        self.templates_view_custom_container = bot_container
+        bot_container.show()
+    except Exception as e:
+        pass
+
+def _send_template_text(self, fragment, template_text):
+    try:
+        preprocessed = preprocess_template_markdown(template_text)
+        parsed = parse_markdown(preprocessed)
+        try:
+            from client_utils import send_message
+            message_data = {
+                "peer": fragment.getCurrentDialogId(),
+                "message": parsed.text,
+                "entities": [ent.to_tlrpc_object() for ent in parsed.entities]
+            }
+            send_message(message_data)
+        except Exception:
+            try:
+                from org.telegram.messenger import SendMessagesHelper
+                from org.telegram.tgnet import TLRPC
+                message = TLRPC.TL_message()
+                message.message = parsed.text
+                message.dialog_id = fragment.getCurrentDialogId()
+                message.date = int(time.time())
+                message.out = True
+                if parsed.entities:
+                    message.entities = [ent.to_tlrpc_object() for ent in parsed.entities]
+                SendMessagesHelper.getInstance().sendMessage(message)
+            except Exception as e2:
+                pass
+    except Exception as e:
+        pass
+
+def _templates_view_hide_popup(self):
+    try:
+        if self.templates_view_custom_container:
+            self.templates_view_custom_container.dismiss()
+    except Exception as e:
+        pass
+
+TemplatesPlugin._setup_templates_view_search = _setup_templates_view_search
+TemplatesPlugin._templates_view_get_class = _templates_view_get_class
+TemplatesPlugin._templates_view_hook_enter_view_constructor = _templates_view_hook_enter_view_constructor
+TemplatesPlugin._templates_view_attach_text_watcher = _templates_view_attach_text_watcher
+TemplatesPlugin._templates_view_collect_settings_with_alias = _templates_view_collect_settings_with_alias
+TemplatesPlugin._templates_view_show_matching_settings = _templates_view_show_matching_settings
+TemplatesPlugin._update_popup_size = _update_popup_size
+TemplatesPlugin._templates_view_show_bot_commands_popup = _templates_view_show_bot_commands_popup
+TemplatesPlugin._send_template_text = _send_template_text
+TemplatesPlugin._templates_view_hide_popup = _templates_view_hide_popup
 
 
 # Спасибо за некоторые части кода @QuantaPlugins и @mishabotov!
