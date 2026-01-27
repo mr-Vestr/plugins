@@ -1,8 +1,8 @@
 {
   "name": "templates",
-  "version": "3.3",
+  "version": "4.0",
   "sticker": "mr_vestr/7",
   "link": "https://github.com/mr-Vestr/plugins/releases/download/Templates_3.3/templates.plugin",
-  "changelog_ru": "• Обновлён дизайн и добавлены анимации в всплывающее меню;\n• Добавлено проверка и обновление плагина;\n• Обновлено меню «Как это работает?»;\n• Обновлён README.md и добавлена его английская версия;\n• И пару других изменений.",
-  "changelog_en": "• Updated design and added animations to the pop-up menu;\n• Added plugin verification and update;\n• Updated the «How does it work?» menu;\n• Updated the README.md and added its English version;\n• And a couple of other changes."
+  "changelog_ru": "• Добавлен предпросмотр шаблонов при вводе;\n• Обновлён дизайн и добавлены анимации во всплывающее меню;\n• Добавлена проверка и обновление плагина;\n• Полностью исправлена проблема со стикерами;\n• Переработано удаление шаблонов во избежание ошибок;\n• Обновлено меню «Как это работает?» и «Версия плагина»;\n• Обновлён README.md и добавлена его английская версия;\n• Обновлены некоторые тексты и исправлены ошибки.",
+  "changelog_en": "• Added template preview during input;\n• Updated design and added animations to the popup menu;\n• Added plugin verification and update;\n• Completely fixed the sticker issue;\n• Reworked template deletion to avoid errors;\n• Updated the "How it works?" and "Plugin version" menus;\n• Updated README.md and added its English version;\n• Updated some texts and fixed errors."
 }
