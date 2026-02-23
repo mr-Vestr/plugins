@@ -1,30 +1,34 @@
-# [Плагины](https://github.com/mr-Vestr/plugins/blob/main/README.md) ӏ Plugins
+# Plugins | [Плагины](https://github.com/mr-Vestr/plugins/blob/main/README.md)
 
 ---
 
 ## Templates
 
-
 **Features:**
 - Quickly, easily and conveniently create, edit, delete and send message templates;
-- Supports formatting;
-- Export / import of templates;
-- Flexible settings, support for two languages, etc.
+- Formatting support;
+- Export/import of templates;
+- Flexible settings, two-language support, etc.
 
-**More about [Templates](https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES.md).**
+**Learn more about [Templates](https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES_EN.md).**
 
 ---
 
 ## Plugin Creator
 
-
 **Features:**
 - Quickly create a plugin file from text;
 - The plugin has flexible settings;
-- Supports two languages, etc.
+- Two-language support, etc.
 
-**More about [Plugin Creator](https://github.com/mr-Vestr/plugins/blob/main/Plugin%20creator/PLUGIN_CREATOR_RU.md).**
+**Learn more about [Plugin Creator](https://github.com/mr-Vestr/plugins/blob/main/Plugin%20creator/PLUGIN_CREATOR_EN.md).**
 
 ---
 
-Follow my plugins on [Telegram](https://t.me/I_am_Vestr) | [ExteraStore](https://exterastore.app/developers/2037728749).
+## How to use:
+- Requires the latest version of [exteraGram](https://github.com/exteraSquad/exteraGram) or [Ayugram](https://github.com/AyuGram/AyuGram) with plugin support;
+- Simply send the plugin file to any chat and click the "Install" button.
+
+---
+
+**Follow my plugins on [Telegram](https://t.me/I_am_Vestr) | [ExteraStore](https://exterastore.app/developers/2037728749).**
