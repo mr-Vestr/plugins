@@ -26,7 +26,7 @@
 ---
 
 ## Как использовать:
-- Требуется последняя версия [exteraGram](https://github.com/exteraSquad/exteraGram) или [Ayugram](https://github.com/AyuGram/AyuGram) с поддержкой плагинов;
+- Требуется последняя версия [exteraGram](https://t.me/exteraGram) или [Ayugram](https://t.me/AyuGramReleases) с поддержкой плагинов;
 - Просто отправьте файл плагина в любой чат и нажмите кнопку «Установить».
 
 ---
