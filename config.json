@@ -1,0 +1,16 @@
+{
+  "badges": [
+    {
+      "user_id": 2037728749,
+      "emoji_id": 5208665577555512622,
+      "text_ru": "**Vestr** — ведущий разработчик **Packit** и основатель **Meta Plugins**.",
+      "text_en": "**Vestr** is the official lead developer of **Packit** and founder of **Meta Plugins**."
+    },
+    {
+      "chat_id": 2693931764,
+      "emoji_id": 5208665577555512622,
+      "text_ru": "**Meta Plugins** — официальный канал **Vestr**.",
+      "text_en": "**Meta Plugins** is official **Vestr** channel."
+    }
+  ]
+}
