@@ -12,5 +12,23 @@
       "text_ru": "**Meta Plugins** — официальный канал **Vestr**.",
       "text_en": "**Meta Plugins** is official **Vestr** channel."
     }
+  ],
+  "deeplinks": [
+    {
+      "deeplink": "tg://vestr",
+      "target": "https://t.me/mr_Vestr"
+    },
+    {
+      "deeplink": "tg://vestr?channel",
+      "target": "https://t.me/i_am_vestr"
+    },
+    {
+      "deeplink": "tg://vestr?github",
+      "target": "https://github.com/mr-Vestr"
+    },
+    {
+      "deeplink": "tg://vestr?support",
+      "target": "gifts_2037728749"
+    }
   ]
 }
