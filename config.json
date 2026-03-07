@@ -16,7 +16,11 @@
   "deeplinks": [
     {
       "deeplink": "tg://vestr",
-      "target": "https://t.me/mr_Vestr"
+      "target": "https://t.me/mr_Vestr?profile"
+    },
+    {
+      "deeplink": "tg://vestr?direct",
+      "target": "https://t.me/mr_Vestr?direct"
     },
     {
       "deeplink": "tg://vestr?channel",
