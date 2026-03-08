@@ -2,7 +2,7 @@
   "name": "templates",
   "version": "4.1",
   "sticker": "mr_vestr/7",
-  "link": "https://github.com/mr-Vestr/plugins/releases/download/Templates_4.0/templates.plugin",
+  "link": "https://github.com/mr-Vestr/plugins/releases/download/Templates_4.1/templates.plugin",
   "changelog_ru": "• Исправлена отправка шаблонов на новой версии;\n• Обновлено меню выбора чата при экспорте;\n• Улучшены другие меню;\n• Проведена оптимизация кода;\n• Другие изменения в канале.",
   "changelog_en": "• Fixed sending templates on the new version;\n• Updated the chat selection menu when exporting;\n• Improved other menus;\n• Code optimization;\n• Other changes in the channel."
 }
