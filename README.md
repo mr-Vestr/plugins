@@ -1,4 +1,5 @@
-# Плагины | [Plugins](https://github.com/mr-Vestr/plugins/blob/main/README_EN.md)
+# Плагины для exteraGram / AyuGram
+### • Русская версия | [English version](https://github.com/mr-Vestr/plugins/blob/main/README_EN.md)
 
 ---
 
