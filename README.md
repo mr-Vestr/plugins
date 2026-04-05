@@ -28,6 +28,13 @@
 <br>
 
 ## Plugin creator
+<div align="center">
+<div>
+<img src="Plugin creator/screenshots/1.jpg" width="30%" />
+<img src="Plugin creator/screenshots/2.jpg" width="30%" />
+<img src="Plugin creator/screenshots/3.jpg" width="30%" />
+</div>
+</div>
 
 **Возможности:**
 - Быстро из текста создать файл плагина;
@@ -46,4 +53,4 @@
 
 ---
 
-## **Следите за моими плагинами в [Telegram](https://t.me/I_am_Vestr).**
+## **Подписывайтесь на мой [Telegram-канал](https://t.me/I_am_Vestr).**
