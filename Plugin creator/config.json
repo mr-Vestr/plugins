@@ -2,7 +2,7 @@
   "name": "plugin_creator",
   "version": "2.1",
   "sticker": "mr_vestr/12",
-  "link": "https://github.com/mr-Vestr/plugins/releases/download/Plugin_creator_2.1/plugin_creator.plugin",
+  "link": "https://github.com/mr-Vestr/plugins/releases/download/Plugin_creator_2.0/plugin_creator.plugin",
   "changelog_ru": "• В меню создания плагина теперь можно: вернуть, копировать, отправить код и очистить поле. И оно теперь не закрывается при жесте вниз;\n• Теперь можно создавать плагин, используя сообщения, введя спецкоманду в начале или удерживая кнопку «Отправить»;\n• Расширено меню «Как это работает?» и добавлены ссылки на README.md;\n• Обновлён дизайн всех кнопок внизу всплывающих окон;\n• Настройки теперь разделены на «Настройки плагина» и «Настройки сообщения»;\n• И много других изменений.",
   "changelog_en": "• In the plugin creation menu, you can now: return, copy, send the code and clear the field. And now it doesn't close when you swipe down;\n• Now you can create a plugin using messages by entering a special command at the beginning or by holding down the «Send» button;\n• The «How does it work?» menu has been expanded and links to README.md ;\n• Updated the design of all buttons at the bottom of pop-up windows;\n• Settings are now divided into «Plugin Settings» and «Message Settings»;\n• And many other changes."
 }
