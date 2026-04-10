@@ -1,45 +1,59 @@
-## **⚠️  Plugin creator — плагин, позволяющий легко и быстро создавать, плагины из кода**
+## **⚠️  Plugin creator — плагин, позволяющий легко и быстро создавать файлы из текста (плагины из готового кода)**
 
 ---
 
 ### **🌟 Возможности:**
 
 
-- Быстро из текста создать файл плагина. Например, вы попросили ИИ создать плагин, он написал вам код, и вы можете обернуть этот код в плагин прямо в Telegram!;
+- Мгновенно превращайте любой текст в файл — идеально для создания плагинов из кода, сгенерированного ИИ, прямо в Telegram;
 
-- Можно создавать в специальном меню, через сообщение (долгое нажатие на кнопку «Отправить») или введя в начале сообщения команду (по умолчанию .plugin);
+- Множество удобных способов создания: через контекстные меню чатов, долгое нажатие на кнопку отправки или специальную команду;
 
-- А в настройках можно гибко настроить этот процесс;
+- Мощный редактор с продуманным интерфейсом: вставка, копирование, шаринг и очистка кода одной кнопкой и плавные анимации;
 
-- В меню создания можно: вставлять код, копировать код, делиться кодом и очищать поле одной кнопкой. Также есть красивые анимации;
-
-- Поддерживаются два языка (русский и английский).
+- Гибкая настройка под ваши нужды — от размещения кнопок в интерфейсе до поведения основной кнопки редактора.
 
 ---
 
 ### **⚙️ Настройки:**
 
 
-- Возможность добавить кнопку "Создать плагин" в [меню чата](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_menu) или [меню плагинов в чате](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_plugins_menu);
+- [Кнопки в главном меню](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_menu_button) — добавляет кнопку открытия настроек в главное меню Telegram;
 
-- Главное, можно добавить кнопку «Отправить как плагин» в [меню долгого нажатия на кнопку «Отправить»](https://t.me/exteraSettings?p=plugin_creator&s=show_send_button);
+- [Кнопка в главном меню плагинов](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_plugins_menu_button) — добавляет кнопку открытия настроек в главное меню плагинов;
 
-- Также можно изменить [команду отправки плагина](https://t.me/exteraSettings?p=plugin_creator&s=send_cmd) (по умолчанию «.plugin»);
+- [Кнопка в меню настроек](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:settings_menu_button) — добавляет кнопку открытия настроек в меню настроек Telegram;
 
-- Ещё моожно [изменить имя отправляемого файла](https://t.me/exteraSettings?p=plugin_creator&s=send_name);
+- [Кнопка в меню чата](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_menu) — добавляет кнопку «Создать файл» в меню чата;
 
-- И можно изменить [текст в сообщении у файла](https://t.me/exteraSettings?p=plugin_creator&s=send_message).
+- [Кнопка в плагинах в чате](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_plugins_menu) — добавляет кнопку «Создать файл» в меню плагинов в чате;
+
+- [Кнопка при отправке сообщения](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_send_button) — добавляет пункт «Отправить как файл» при долгом нажатии на кнопку отправки;
+
+- [Команда отправки файла](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_cmd) — позволяет настроить команду для отправки из поля ввода (по умолчанию «.file»);
+
+- [Название файла](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_name) — можно изменить имя и расширение отправляемого файла;
+
+- [Текст сообщения](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_message) — можно изменить текст в сообщении с файла;
+
+- [Размер шрифта](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:font_size) — настройка размера текста в редакторе (от 5 до 50);
+
+- [Кнопки в панели](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_buttons) — настройка кнопок в панели редактора (Настройки, Вставить, Вернуть, Поделиться, Копировать, Очистить);
+
+- [Действие основной кнопки](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:main_button_action) — что делает основная кнопка (Отправить в чат, Поделиться файлом, Сохранить в загрузки, Установить плагин);
+
+- Скрыть элементы — можно скрыть [панель инструментов](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar), [основную кнопку](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button), [кнопку закрытия меню](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_close_button), [редактор названия файла](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_filename_change).
 
 ---
 
-### **💯 Способы создания плагинов:**
+### **💯 Способы создания файлов:**
 
 
-1. Через специальное меню. "⁝" → "Создать плагин" или "⁝" → "Плагины" → "Создать плагин". Для работы над включить [это](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_menu) или [это](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_plugins_menu);
+1. Через специальное меню. "⁝" → "Создать файл" или "⁝" → "Плагины" → "Создать файл". Для работы нужно включить [это](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_menu) или [это](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_plugins_menu);
 
-2. Удерживая кнопку «Отправить» → «Отправить как плагин». Для работы надо включить [это](https://t.me/exteraSettings?p=plugin_creator&s=show_send_button);
+2. Удерживая кнопку «Отправить» → «Отправить как файл». Для работы надо включить [это](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_send_button);
 
-3. И если в сообщение ввести команду → после enter и код плагина → отправить. Команду можно настроить [тут](https://t.me/exteraSettings?p=plugin_creator&s=send_name). По умолчанию команда «.plugin».
+3. Ввести команду в сообщение → после enter и текст файла → отправить. Команду можно настроить [тут](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_cmd). По умолчанию команда «.file».
 
 ---
 
