@@ -1,45 +1,59 @@
-## **⚠️ Plugin creator — a plugin that allows you to easily and quickly create plugins from code**
+## **⚠️ Plugin creator — a plugin that allows you to easily and quickly create files from text (plugins from ready-made code)**
 
 ---
 
 ### **🌟 Features:**
 
 
-- Quickly create a plugin file from text. For example, you asked an AI to create a plugin, it wrote you the code, and you can wrap this code into a plugin right in Telegram!;
+- Instantly turn any text into a file — perfect for creating plugins from AI-generated code right in Telegram;
 
-- Can be created in a special menu, via a message (long-pressing the "Send" button) or by entering a command at the beginning of the message (default: .plugin);
+- Many convenient ways to create: via chat context menus, long press on the send button, or a special command;
 
-- And in the settings, you can flexibly configure this process;
+- Powerful editor with a thoughtful interface: paste, copy, share and clear code with one button and smooth animations;
 
-- In the creation menu, you can: paste code, copy code, share code, and clear the field with one button. There are also nice animations;
-
-- Supports two languages (Russian and English).
+- Flexible customization to your needs — from button placement in the interface to the behavior of the editor's main button.
 
 ---
 
 ### **⚙️ Settings:**
 
 
-- Ability to add a "Create Plugin" button to the [chat menu](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_menu) or [chat plugins menu](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_plugins_menu);
+- [Buttons in main menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_menu_button) — adds a button to open settings in the main Telegram menu;
 
-- Mainly, you can add a "Send as Plugin" button to the [long-press menu of the "Send" button](https://t.me/exteraSettings?p=plugin_creator&s=show_send_button);
+- [Button in main plugins menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_plugins_menu_button) — adds a button to open settings in the main plugins menu;
 
-- You can change the [plugin send command](https://t.me/exteraSettings?p=plugin_creator&s=send_cmd) (default is ".plugin");
+- [Button in settings menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:settings_menu_button) — adds a button to open settings in the Telegram settings menu;
 
-- You can also [change the name of the sent file](https://t.me/exteraSettings?p=plugin_creator&s=send_name);
+- [Button in chat menu](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_menu) — adds a "Create file" button in the chat menu;
 
-- And you can change the [text in the message accompanying the file](https://t.me/exteraSettings?p=plugin_creator&s=send_message).
+- [Button in chat plugins](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_plugins_menu) — adds a "Create file" button in the plugins menu in chat;
+
+- [Button when sending message](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_send_button) — adds a "Send as file" option when long pressing the send button;
+
+- [Send file command](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_cmd) — allows you to configure a command for sending from the input field (default is ".file");
+
+- [File name](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_name) — you can change the name and extension of the sent file;
+
+- [Message text](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_message) — you can change the text in the message with the file;
+
+- [Font size](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:font_size) — text size setting in the editor (from 5 to 50);
+
+- [Buttons in panel](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_buttons) — setting buttons in the editor panel (Settings, Paste, Undo, Share, Copy, Clear);
+
+- [Main button action](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:main_button_action) — what the main button does (Send to chat, Share file, Save to downloads, Install plugin);
+
+- Hide elements — you can hide the [toolbar panel](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar), [main button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button), [close menu button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_close_button), [file name editor](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_filename_change).
 
 ---
 
-### **💯 Methods for creating plugins:**
+### **💯 Ways to create files:**
 
 
-1. Through a special menu. "⁝" → "Create Plugin" or "⁝" → "Plugins" → "Create Plugin". To work, enable [this](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_menu) or [this](https://t.me/exteraSettings?p=plugin_creator&s=show_chat_plugins_menu);
+1. Via special menu. "⁝" → "Create file" or "⁝" → "Plugins" → "Create file". To work, you need to enable [this](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_menu) or [this](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_plugins_menu);
 
-2. By long-pressing the "Send" button → "Send as Plugin". To work, enable [this](https://t.me/exteraSettings?p=plugin_creator&s=show_send_button);
+2. Holding the "Send" button → "Send as file". To work, you need to enable [this](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_send_button);
 
-3. And if you enter a command in a message → press enter and then the plugin code → send. The command can be configured [here](https://t.me/exteraSettings?p=plugin_creator&s=send_name). The default command is ".plugin".
+3. Enter command in message → after enter and file text → send. The command can be configured [here](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_cmd). Default command is ".file".
 
 ---
 
