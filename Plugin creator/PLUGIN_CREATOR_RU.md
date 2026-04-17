@@ -42,7 +42,7 @@
 
 - [Действие основной кнопки](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:main_button_action) — что делает основная кнопка (Отправить в чат, Поделиться файлом, Сохранить в загрузки, Установить плагин);
 
-- Скрыть элементы — можно скрыть [панель инструментов](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar), [основную кнопку](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button), [кнопку закрытия меню](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_close_button), [редактор названия файла](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_filename_change).
+- Скрыть элементы — можно скрыть [панель инструментов](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) и [основную кнопку](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) при редактировании.
 
 ---
 
