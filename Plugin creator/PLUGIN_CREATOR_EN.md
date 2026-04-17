@@ -42,7 +42,7 @@
 
 - [Main button action](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:main_button_action) — what the main button does (Send to chat, Share file, Save to downloads, Install plugin);
 
-- Hide elements — you can hide the [toolbar panel](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar), [main button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button), [close menu button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_close_button), [file name editor](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_filename_change).
+- Hide elements — you can hide the [toolbar panel](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) and [main button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) during editing.
 
 ---
 
