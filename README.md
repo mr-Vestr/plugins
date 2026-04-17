@@ -54,4 +54,4 @@
 
 ---
 
-## **Подписывайтесь на мой [Telegram-канал](https://t.me/I_am_Vestr).**
+## **Подписывайтесь на мой [Telegram-канал](https://t.me/I_am_Vestr) :)**
