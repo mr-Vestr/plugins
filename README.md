@@ -5,7 +5,7 @@
 
 <br>
 
-## Templates | Шаблоны
+## Templates
 <div align="center">
 <div>
 <img src="Templates/screenshots/1.jpg" width="30%" />
