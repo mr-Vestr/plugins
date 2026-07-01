@@ -42,7 +42,7 @@
 - Flexible plugin settings;
 - Support for two languages, etc.
 
-### **More about [Plugin creator](https://github.com/mr-Vestr/plugins/blob/main/Plugin%20creator/PLUGIN_CREATOR_RU.md).**
+### **More about [Plugin creator](https://github.com/mr-Vestr/plugins/blob/main/Plugin%20creator/PLUGIN_CREATOR_EN.md).**
 
 <br>
 
