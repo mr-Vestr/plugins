@@ -18,31 +18,35 @@
 ### **⚙️ Settings:**
 
 
-- [Buttons in main menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_menu_button) — adds a button to open settings in the main Telegram menu;
+- [Main menu button](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_menu_button) — adds a button to open settings in the main Telegram menu;
 
-- [Button in main plugins menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_plugins_menu_button) — adds a button to open settings in the main plugins menu;
+- [Button in the main plugin menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:main_plugins_menu_button) — adds a button to open settings in the main plugin menu;
 
-- [Button in settings menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:settings_menu_button) — adds a button to open settings in the Telegram settings menu;
+- [Button in the settings menu](https://t.me/exteraSettings?p=plugin_creator&s=plugin_settings_section:settings_menu_button) — adds a button to open settings in the Telegram settings menu;
 
-- [Button in chat menu](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_menu) — adds a "Create file" button in the chat menu;
+- [Button in the chat menu](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_menu) — adds a "Create file" button to the chat menu;
 
-- [Button in chat plugins](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_plugins_menu) — adds a "Create file" button in the plugins menu in chat;
+- [Button in chat plugins](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_chat_plugins_menu) — adds a "Create file" button to the plugin menu in chat;
 
-- [Button when sending message](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_send_button) — adds a "Send as file" option when long pressing the send button;
+- [Button when sending a message](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:show_send_button) — adds a "Send as file" item when long-pressing the send button;
 
-- [Send file command](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_cmd) — allows you to configure a command for sending from the input field (default is ".file");
+- [File sending command](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_cmd) — allows you to set the command for sending from the input field (default ".file");
 
 - [File name](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_name) — you can change the name and extension of the sent file;
 
 - [Message text](https://t.me/exteraSettings?p=plugin_creator&s=file_creation_section:send_message) — you can change the text in the message with the file;
 
-- [Font size](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:font_size) — text size setting in the editor (from 5 to 50);
-
-- [Buttons in panel](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_buttons) — setting buttons in the editor panel (Settings, Paste, Undo, Share, Copy, Clear);
+- [Font size](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:font_size) — adjust the text size in the editor (from 5 to 50);
 
 - [Main button action](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:main_button_action) — what the main button does (Send to chat, Share file, Save to downloads, Install plugin);
 
-- Hide elements — you can hide the [toolbar panel](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) and [main button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) during editing.
+- [Button layout](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_buttons) — configure the buttons in the editor panel (Undo, Settings, Insert, Back, Forward, Share, Copy, Clear);
+
+- [Panel button style](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_button_style) — choose the display style of buttons in the panel (icons, labels, both);
+
+- Information block — configure which elements from the text information block are displayed: [character count](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_chars), [line count](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_lines), [data size](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_bytes);
+
+- Hide elements — you can hide the [toolbar](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) and the [main button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) while editing.
 
 ---
 
