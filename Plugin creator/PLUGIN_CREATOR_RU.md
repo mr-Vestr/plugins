@@ -46,7 +46,7 @@
 
 - Блок информации — настройка, какие элементы из блока с информацией о тексте будут отображаться: [количество букв](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_chars), [число строк](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_lines), [объём данных](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_bytes);
 
-- Скрыть элементы — можно скрыть [панель инструментов](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) и [основную кнопку](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) при редактировании.
+- Скрыть элементы — можно скрыть: [блок информации](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_data_text), [панель инструментов](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) и [основную кнопку](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) при редактировании.
 
 ---
 
