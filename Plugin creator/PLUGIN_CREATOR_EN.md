@@ -46,7 +46,7 @@
 
 - Information block — configure which elements from the text information block are displayed: [character count](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_chars), [line count](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_lines), [data size](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_bytes);
 
-- Hide elements — you can hide the [toolbar](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) and the [main button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) while editing.
+- Hide elements — you can hide: [information block](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_data_text), [toolbar](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar), and [main button](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) while editing.
 
 ---
 
