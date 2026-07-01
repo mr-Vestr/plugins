@@ -38,9 +38,13 @@
 
 - [Размер шрифта](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:font_size) — настройка размера текста в редакторе (от 5 до 50);
 
-- [Кнопки в панели](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_buttons) — настройка кнопок в панели редактора (Настройки, Вставить, Вернуть, Поделиться, Копировать, Очистить);
-
 - [Действие основной кнопки](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:main_button_action) — что делает основная кнопка (Отправить в чат, Поделиться файлом, Сохранить в загрузки, Установить плагин);
+
+- [Расположение кнопок](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_buttons) — настройка кнопок в панели редактора (Вернуть, Настройки, Вставить, Назад, Вперёд, Поделиться, Копировать, Очистить);
+
+- [Вид кнопок в панели](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:panel_button_style) — выбор вида отображения кнопок в панели (иконки, названия, вместе);
+
+- Блок информации — настройка, какие элементы из блока с информацией о тексте будут отображаться: [количество букв](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_chars), [число строк](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_lines), [объём данных](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:show_info_bytes);
 
 - Скрыть элементы — можно скрыть [панель инструментов](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_toolbar) и [основную кнопку](https://t.me/exteraSettings?p=plugin_creator&s=text_editor_section:hide_main_button) при редактировании.
 
