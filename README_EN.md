@@ -20,7 +20,7 @@
 - Export / import of templates;
 - Flexible settings, support for two languages, etc.
 
-### **More about [Templates](https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES.md).**
+### **More about [Templates](https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES_EN.md).**
 
 <br>
 
