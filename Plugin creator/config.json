@@ -3,6 +3,6 @@
   "version": "3.1",
   "sticker": "mr_vestr/12",
   "link": "https://github.com/mr-Vestr/plugins/releases/download/Plugin_creator_3.1/plugin_creator.plugin",
-  "changelog_ru": "• Добавлена возможность скрыть кнопки из панели меню создания файла;\n• Добавлены кнопки «Назад» / «Вперёд»;\n• Добавлен выбор отображения кнопок в панели (иконки, текст, вместе);\n• Добавлен блок с информацией о введённом тексте (количество букв, строк, данных).",
-  "changelog_en": "• Added the ability to hide buttons from the file creation menu panel;\n• Added “Back” / “Forward” buttons;\n• Added a choice of displaying buttons in the panel (icons, text, together);\n• Added a block with information about the entered text (number of letters, lines, data)."
+  "changelog_ru": "• Добавлена возможность скрыть кнопки из панели меню создания файла;\n• Добавлены кнопки «Назад» / «Вперёд»;\n• Добавлен выбор отображения кнопок в панели (иконки, текст, вместе);\n• Появилась возможность назначить основную кнопку в меню создания файла на «Меню выбора»;\n• Добавлен блок с информацией о введённом тексте (количество букв, строк, данных).",
+  "changelog_en": "• Added the ability to hide buttons from the file creation menu panel;\n• Added “Back” / “Forward” buttons;\n• Added a choice of displaying buttons in the panel (icons, text, together);\n• It is now possible to assign the main button in the file creation menu to the “Select Menu”;\n• Added a block with information about the entered text (number of letters, lines, data)."
 }
