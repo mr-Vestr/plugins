@@ -38,7 +38,7 @@
 
 3. By entering just the base command and selecting the desired template from the menu;
 
-4. By opening the template selection menu in the [chat menu](https://t.me/exteraSettings?p=templates&s=show_chat_menu) and the [chat plugin menu](https://t.me/exteraSettings?p=templates&s=show_chat_plugins_menu).
+4. By opening the template selection menu in the chat menu and the chat plugin menu.
 
 ---
 
