@@ -22,11 +22,11 @@
 ### **⚙️ Настройки:**
 
 
-- Возможность добавить кнопку отправки шаблонов в [меню чата](https://t.me/exteraSettings?p=templates&s=show_chat_menu) или [меню плагинов в чате](https://t.me/exteraSettings?p=templates&s=show_chat_plugins_menu);
+- Возможность добавить кнопку отправки шаблонов в [меню чата](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:show_chat_menu) или [меню плагинов в чате](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:show_chat_plugins_menu);
 
-- Также добавить кнопку открытия меню настроек в [боковое меню](https://t.me/exteraSettings?p=templates&s=show_drawer_menu);
+- Также добавить кнопку открытия меню настроек в [главное меню](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:show_drawer_menu) м [настроек Telegram](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:settings_menu_button);
 
-- Ещё можно изменить [базовую команду](https://t.me/exteraSettings?p=templates&s=send_cmd) для отправки шаблона (по умолчанию «//»);
+- Ещё можно изменить [базовую команду](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:send_cmd) для отправки шаблона (по умолчанию «//»);
 
 - И можно создать шаблон, изменить его имя и текст, удалить, экспортировать и импортировать.
 
