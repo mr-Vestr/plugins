@@ -41,7 +41,7 @@
 
 3. Введя просто базовую команду и выбрав нужный шаблон в меню;
 
-4. Открыв меню выбора шаблона в [меню чата](https://t.me/exteraSettings?p=templates&s=show_chat_menu) и меню [плагина в чате](https://t.me/exteraSettings?p=templates&s=show_chat_plugins_menu).
+4. Открыв меню выбора шаблона в меню чата и меню плагина в чате.
 
 ---
 
