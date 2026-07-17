@@ -18,7 +18,7 @@
 - Quickly, easily and conveniently create, edit, delete and send message templates;
 - Supports formatting;
 - Export / import of templates;
-- Flexible settings, support for two languages, etc.
+- Flexible settings, support for 16 languages, etc.
 
 ### **More about [Templates](https://github.com/mr-Vestr/plugins/blob/main/Templates/TEMPLATES_EN.md).**
 
