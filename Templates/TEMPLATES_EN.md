@@ -1,19 +1,18 @@
-## **⚠️  Templates — a plugin that allows you to easily and quickly create, edit and send templates**
+## **⚠️ Templates — a plugin that allows you to easily and quickly create, edit, and send templates**
 
 ---
 
 ### **🌟 Features:**
 
+- Create message templates, edit them, and quickly send them via a button in settings or via a predefined command + template name in the plugin settings (default: //);
 
-- Create message templates, edit them and quickly send them with a button in the settings or with a prepared command + template name in the plugin settings (by default //);
-
-- You can also send via a menu that can be enabled in the chat menu or in the chat plugins menu;
+- You can also send via a menu that can be enabled in the chat menu or the chat plugins menu;
 
 - Or directly from the settings menu;
 
-- In the settings you can flexibly configure this;
+- Settings are flexibly configurable;
 
-- You can also export / import templates and add formatting;
+- You can also export/import templates and add formatting;
 
 - Two languages are supported (Russian and English).
 
@@ -21,34 +20,31 @@
 
 ### **⚙️ Settings:**
 
+- Option to add a template sending button to the [chat menu](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:show_chat_menu) or [chat plugins menu](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:show_chat_plugins_menu);
 
-- Ability to add a template sending button to the [chat menu](https://t.me/exteraSettings?p=templates&s=show_chat_menu  ) or [chat plugins menu](https://t.me/exteraSettings?p=templates&s=show_chat_plugins_menu  );
+- Also add a button to open the settings menu in the [main menu](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:show_drawer_menu) and [Telegram settings](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:settings_menu_button);
 
-- Also add a button to open the settings menu in the [side menu](https://t.me/exteraSettings?p=templates&s=show_drawer_menu  );
+- You can also change the [base command](https://t.me/exteraSettings?p=templates&s=plugin_settings_section:send_cmd) for sending a template (default is "//");
 
-- You can also change the [base command](https://t.me/exteraSettings?p=templates&s=send_cmd  ) for sending a template (by default "//");
-
-- And you can create a template, change its name and text, delete, export and import.
+- And you can create a template, change its name and text, delete, export, and import.
 
 ---
 
-### **💯 Ways to create templates:**
+### **💯 Ways to send templates:**
 
+1. Through the settings menu, by clicking "Send template";
 
-1. Through the settings menu, click "Send template";
+2. By entering the base command and template name in a message;
 
-2. By entering the base command and template name in the message;
+3. By entering just the base command and selecting the desired template from the menu;
 
-3. By simply entering the base command and selecting the desired template in the menu;
-
-4. By opening the template selection menu in the [chat menu](https://t.me/exteraSettings?p=templates&s=show_chat_menu  ) and the [plugin menu in the chat](https://t.me/exteraSettings?p=templates&s=show_chat_plugins_menu  ).
+4. By opening the template selection menu in the [chat menu](https://t.me/exteraSettings?p=templates&s=show_chat_menu) and the [chat plugin menu](https://t.me/exteraSettings?p=templates&s=show_chat_plugins_menu).
 
 ---
 
 ### **✏️ Formatting:**
 
-
-- `**example**` — Bold text 
+- `**example**` — Bold text
 
 - `__example__` — Underlined text
 
@@ -56,7 +52,7 @@
 
 - `--example--` — Italic text
 
-- Other types and formatting examples are available in the plugin settings when clicking the "How does it work?" button
+- Other formatting types and examples are available in the plugin settings by clicking the "How does it work?" button.
 
 ---
 
