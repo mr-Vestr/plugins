@@ -1,0 +1,8 @@
+{
+  "name": "templates",
+  "version": "4.2",
+  "sticker": "mr_vestr/7",
+  "link": "https://github.com/mr-Vestr/plugins/releases/download/Templates_4.2/templates.plugin",
+  "changelog_ru": "• Добавлено 14 языков;\n• Проведён редизайн настроек;\n• Возвращена кнопка «Вернуть»;\n• Прокачена отправка шаблонов.\n\nЕСЛИ ВОЗНИКАЕТ ПРОБЛЕМА С ОБНОВЛЕНИЕМ, ОБНОВИТЕСЬ ИЗ МОЕГО КАНАЛА, НАЖАВ НА КНОПКУ «Полный список изменений»",
+  "changelog_en": "• Added 14 languages;\n• Redesigned the settings;\n• Brought back the \"Undo\" button;\n• Improved template submission.\n\nIF YOU HAVE A PROBLEM WITH THE UPDATE, UPDATE FROM MY CHANNEL BY CLICKING THE \"Full Changelog\" BUTTON."
+}
