@@ -48,6 +48,29 @@
 
 ---
 
+<br>
+
+## ADB Lite
+<div align="center">
+<div>
+<img src="ADB Lite/screenshots/1.jpg" width="30%" />
+<img src="ADB Lite/screenshots/2.jpg" width="30%" />
+<img src="ADB Lite/screenshots/3.jpg" width="30%" />
+</div>
+</div>
+
+**Возможности:**
+- Мгновенно устанавливать плагины с ПК на телефон по Wi-Fi;
+- Имеется много настроек для полной кастомизации процесса;
+- Имеется поддержка двух языков и т.д.;
+- Необходимо установить приложение для [ПК](https://github.com/mr-Vestr/adb-lite-desktop).
+
+### **Подробнее про [ADB Lite](https://github.com/mr-Vestr/plugins/blob/main/ADB%20Lite/ADB_LITE_RU.md).**
+
+<br>
+
+---
+
 ## Как использовать:
 - Требуется последняя версия [exteraGram](https://t.me/exteraGram) или [Ayugram](https://t.me/AyuGramReleases) с поддержкой плагинов;
 - Просто отправьте файл плагина в любой чат и нажмите кнопку «Установить».
