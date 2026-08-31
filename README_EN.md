@@ -65,7 +65,7 @@
 - Supports two languages, etc.;
 - Requires installation of the [PC](https://github.com/mr-Vestr/adb-lite-desktop) application.
 
-### **More about [ADB Lite](https://github.com/mr-Vestr/plugins/blob/main/ADB%20Lite/ADB_LITE_RU.md).**
+### **More about [ADB Lite](https://github.com/mr-Vestr/plugins/blob/main/ADB%20Lite/ADB_LITE_EN.md).**
 
 <br>
 
