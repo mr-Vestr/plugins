@@ -48,6 +48,29 @@
 
 ---
 
+<br>
+
+## ADB Lite
+<div align="center">
+<div>
+<img src="ADB Lite/screenshots/1.jpg" width="30%" />
+<img src="ADB Lite/screenshots/2.jpg" width="30%" />
+<img src="ADB Lite/screenshots/3.jpg" width="30%" />
+</div>
+</div>
+
+**Features:**
+- Instantly install plugins from PC to phone via Wi-Fi;
+- Many settings for full customization of the process;
+- Supports two languages, etc.;
+- Requires installation of the [PC](https://github.com/mr-Vestr/adb-lite-desktop) application.
+
+### **More about [ADB Lite](https://github.com/mr-Vestr/plugins/blob/main/ADB%20Lite/ADB_LITE_RU.md).**
+
+<br>
+
+---
+
 ## How to use:
 - Requires the latest version of [exteraGram](https://t.me/exteraGram) or [Ayugram](https://t.me/AyuGramReleases) with plugin support;
 - Just send the plugin file to any chat and click the "Install" button.
