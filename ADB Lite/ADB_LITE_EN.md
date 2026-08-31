@@ -68,4 +68,4 @@
 
 ---
 
-[![download](https://github.com/user-attachments/assets/26cf511b-0c91-4d31-938b-a2a6faa890a2)](https://t.me/I_am_Vestr/13)ㅤ[![canal](https://github.com/user-attachments/assets/05613a8b-489c-4652-8181-fbe80856d841)](https://t.me/I_am_Vestr)
+[![download](https://github.com/user-attachments/assets/26cf511b-0c91-4d31-938b-a2a6faa890a2)](https://t.me/I_am_Vestr/96)ㅤ[![canal](https://github.com/user-attachments/assets/05613a8b-489c-4652-8181-fbe80856d841)](https://t.me/I_am_Vestr)
