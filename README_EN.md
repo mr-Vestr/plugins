@@ -1,4 +1,4 @@
-# Plugins for exteraGram / AyuGram
+# Plugins for exteraGram / AyuGram / exteraless
 ### • English | [Русский](https://github.com/mr-Vestr/plugins/blob/main/README.md)
 
 ---
