@@ -1,8 +1,8 @@
 {
   "name": "templates",
-  "version": "4.2",
+  "version": "5.1",
   "sticker": "mr_vestr/7",
-  "link": "https://github.com/mr-Vestr/plugins/releases/download/Templates_4.2/templates.plugin",
-  "changelog_ru": "• Добавлено 14 языков;\n• Проведён редизайн настроек;\n• Возвращена кнопка «Вернуть»;\n• Исправлен баг с отправкой шаблонов в топиках;\n• Изменён способ отправки шаблонов из меню настроек.\n\nЕСЛИ ВОЗНИКАЕТ ПРОБЛЕМА С ОБНОВЛЕНИЕМ, ОБНОВИТЕСЬ ИЗ МОЕГО КАНАЛА, НАЖАВ НА КНОПКУ «Полный список изменений»",
-  "changelog_en": "• Added 14 languages;\n• Redesigned the settings;\n• Brought back the \"Undo\" button;\n• Fixed a bug with template submission in topics;\n• Changed the way templates are sent from the settings menu.\n\nIF YOU HAVE A PROBLEM WITH THE UPDATE, UPDATE FROM MY CHANNEL BY CLICKING THE \"Full Changelog\" BUTTON."
+  "link": "https://github.com/mr-Vestr/plugins/releases/download/Templates_5.0/templates.plugin",
+  "changelog_ru": "• Текст шаблона теперь изменяется в расширенном редакторе Telegram (поддержка кастомных эмодзи, вставка с форматированием, прикрепление медиа, полное форматирование Telegram и т. д.);\n• Максимальное количество шаблонов увеличено до 100;\n• Обновлён дизайн всех всплывающих меню;\n• При отправке шаблонов из меню настроек теперь можно выбрать несколько чатов;",
+  "changelog_en": "• Template text can now be edited in the advanced Telegram editor (support for custom emojis, paste with formatting, media attachments, full Telegram formatting, etc.);\n• The maximum number of templates has been increased to 100;\n• The design of all pop-up menus has been updated;\n• When sending templates from the settings menu, you can now select multiple chats;"
 }
